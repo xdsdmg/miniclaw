@@ -44,8 +44,8 @@ export class MiniclawClient {
    * @returns Execution result text
    */
   async execute(task: string): Promise<string> {
-    const serverURL = this.config.serverURL || 'http://localhost:3000';
-    const apiKey = this.config.serverApiKey || process.env.MINICLAW_API_KEY;
+    const serverURL = this.config.serverURL;
+    const apiKey = this.config.serverApiKey;
 
     if (!apiKey) {
       return 'Error: No API key configured for miniclaw server';

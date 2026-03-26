@@ -1,103 +1,151 @@
 # AGENTS.md - Miniclaw Development Guide
 
-This document provides guidelines and commands for agents working on the miniclaw codebase.
+This document provides comprehensive guidelines and technical details for AI coding agents working on the miniclaw codebase.
 
 ## Project Overview
 
-Miniclaw is a minimal AI agent that orchestrates LLMs and tools to complete tasks. It supports multiple LLM providers (OpenAI, DeepSeek, Kimi, Qwen) and provides both CLI and HTTP server interfaces.
+Miniclaw is a minimal AI agent that orchestrates LLMs and tools to complete tasks. It supports multiple LLM providers (OpenAI, DeepSeek, Kimi, Qwen) and provides both CLI and HTTP server interfaces with streaming capabilities.
 
-## Build Commands
+### Key Features
+- Multi-provider LLM support with unified API interface
+- Tool execution capabilities (Bash commands, Python scripts)
+- Comprehensive safety controls for dangerous operations
+- HTTP server with REST API and Server-Sent Events (SSE) streaming
+- CLI interface with both direct execution and server modes
+- Concurrent task management with configurable limits
+
+## Technology Stack
+
+- **Language**: TypeScript (ES2020 target, CommonJS modules)
+- **Runtime**: Node.js
+- **Key Dependencies**:
+  - `openai` - LLM provider SDK
+  - `commander` - CLI argument parsing
+  - `zod` - Schema validation
+  - `express` - HTTP server framework
+- **Build Tool**: TypeScript compiler (`tsc`)
+- **Development**: `ts-node` for direct TypeScript execution
+
+## Project Structure
+
+```
+src/
+├── cli.ts          # CLI entry point with Commander.js
+├── server.ts       # Express HTTP server with SSE support
+├── agent.ts        # Core AI agent logic and execution loop
+├── llm.ts          # LLM provider abstraction layer
+├── tools.ts        # Tool execution with safety controls
+└── tools-schema.ts # Tool definitions for LLM consumption
+```
+
+## Build and Development Commands
 
 ```bash
-# Build the TypeScript project
+# Install dependencies
+npm install
+
+# Build TypeScript to JavaScript
 npm run build
 
 # Run in development mode (using ts-node)
 npm run dev
 
-# Start the CLI
+# Start CLI directly
 npm start
 
-# Run the server
-node dist/cli.js server -a <API_KEY> --default-api-key <LLM_KEY> --provider deepseek
+# Run built CLI
+node dist/cli.js
+
+# Start HTTP server
+node dist/cli.js server -k <API_KEY> --provider deepseek --default-api-key <LLM_KEY>
 ```
 
-## Testing
+## Architecture Details
 
-This project currently has no formal test suite. The test.sh script is for manual testing:
+### Core Components
 
-```bash
-# Run manual tests
-./test.sh
-```
+1. **Agent (`agent.ts`)**
+   - Main execution loop with LLM interaction
+   - Tool call handling and result processing
+   - Progress event emission for streaming
+   - Maximum iteration limit (10) to prevent infinite loops
 
-When adding tests, use a testing framework like Jest or Vitest and place tests in `src/**/*.test.ts`.
+2. **LLM Provider (`llm.ts`)**
+   - Unified interface for multiple LLM providers
+   - Automatic fallback when tools are not supported
+   - Provider-specific base URLs and model selection
+   - Environment variable model overrides
 
-## Code Style Guidelines
+3. **Tool Executor (`tools.ts`)**
+   - Bash command execution with safety filtering
+   - Python script execution with temporary file management
+   - Comprehensive dangerous pattern detection
+   - Timeout and buffer size limits
+
+4. **HTTP Server (`server.ts`)**
+   - Express.js-based REST API
+   - Bearer token authentication
+   - Concurrency management with queue system
+   - SSE streaming for real-time progress updates
+
+### Safety Controls
+
+The project implements multiple layers of safety controls:
+
+**Bash Command Safety**:
+- Blocks dangerous commands (sudo, rm -rf, system modifications)
+- Timeout limits (30 seconds)
+- Output buffer limits (10MB)
+
+**Python Code Safety**:
+- Restricts dangerous imports (os, sys, subprocess, socket)
+- Blocks eval/exec operations
+- Prevents file system access patterns
+- Temporary file cleanup
+
+**API Security**:
+- Bearer token authentication required
+- Rate limiting through concurrency controls
+- Input validation and sanitization
+
+## Configuration
 
 ### TypeScript Configuration
-
-The project uses strict TypeScript with the following settings:
 - Target: ES2020
 - Module: CommonJS
 - Strict mode enabled
-- ESModuleInterop enabled
+- Source maps and declarations generated
+- Output directory: `dist/`
 
-### Imports
+### Environment Variables
+- `OPENAI_API_KEY` - OpenAI API key
+- `DEEPSEEK_MODEL` - Override DeepSeek model
+- `KIMI_MODEL` - Override Kimi model
+- `QWEN_MODEL` - Override Qwen model
+- `OPENAI_MODEL` - Override OpenAI model
+- `MINICLAW_API_KEY` - Server authentication key
 
-- Use relative imports for local modules: `import { Agent } from './agent';`
-- Use named exports where possible
-- Group imports: external first, then local
+## Code Style and Conventions
 
+### Naming Conventions
+- **Files**: kebab-case (e.g., `tools-schema.ts`)
+- **Classes**: PascalCase (e.g., `Agent`, `LLMProvider`)
+- **Interfaces**: PascalCase with descriptive names (e.g., `AgentConfig`)
+- **Functions**: camelCase (e.g., `executeTask`, `generateResponse`)
+- **Constants**: camelCase or UPPER_SNAKE_CASE
+
+### Import Organization
 ```typescript
-// External imports
+// External imports first
 import express, { Request, Response } from 'express';
 import OpenAI from 'openai';
 
-// Local imports
+// Local imports second
 import { Agent } from './agent';
 import { executeTask, AgentConfig } from './agent';
 ```
 
-### Naming Conventions
-
-- **Files**: kebab-case (e.g., `tool-executor.ts`, `tools-schema.ts`)
-- **Classes**: PascalCase (e.g., `Agent`, `LLMProvider`, `ToolExecutor`)
-- **Interfaces**: PascalCase with descriptive names (e.g., `AgentConfig`, `ExecuteResult`)
-- **Types**: PascalCase (e.g., `ProgressStage`)
-- **Functions**: camelCase (e.g., `executeTask`, `startServer`)
-- **Constants**: camelCase or UPPER_SNAKE_CASE for configuration constants
-
-### Interfaces and Types
-
-- Define interfaces for all configuration objects
-- Use explicit return types for functions when not obvious
-- Use `Record<string, unknown>` for generic object types
-
-```typescript
-export interface AgentConfig {
-  provider: string;
-  apiKey?: string;
-  baseURL?: string;
-}
-
-export interface ExecuteResult {
-  success: boolean;
-  result?: string;
-  error?: string;
-  executionTime: number;
-}
-
-export type ProgressStage = 'thinking' | 'executing' | 'tool_result' | 'completed';
-```
-
-### Error Handling
-
-- Always check error type: `error instanceof Error ? error.message : String(error)`
-- Use try-catch blocks for async operations
-- Return structured error responses in API endpoints
-- Include error stack traces in development for debugging
-
+### Error Handling Pattern
 ```typescript
 try {
   const result = await someAsyncOperation();
@@ -111,119 +159,111 @@ try {
 }
 ```
 
-### Class Structure
-
-- Use private fields with `private` keyword
-- Use constructor parameter properties when appropriate
-- Keep methods focused and small
-
+### Interface Definitions
 ```typescript
-export class LLMProvider {
-  private client: OpenAI;
-  private config: LLMConfig;
+export interface AgentConfig {
+  provider: string;
+  apiKey?: string;
+  baseURL?: string;
+}
 
-  constructor(config: LLMConfig) {
-    this.config = config;
-    this.client = new OpenAI({ ... });
-  }
+export interface ExecuteResult {
+  success: boolean;
+  result?: string;
+  error?: string;
+  executionTime: number;
 }
 ```
 
-### Async/Await
+## API Endpoints
 
-- Always use async/await over raw promises
-- Use `Promise.race()` for timeout handling
-- Always handle promise rejections with try-catch
+### Health Check
+- `GET /health` - Returns server status and concurrency info
 
-```typescript
-async executeTask(task: string): Promise<ExecuteResult> {
-  try {
-    const result = await this.llm.generateResponse(task);
-    return result;
-  } catch (error) {
-    // Handle error
-  }
-}
+### Task Execution
+- `POST /execute` - Synchronous task execution with JSON response
+- `GET /execute/stream` - Streaming execution with SSE events
+
+### Authentication
+All `/execute` endpoints require Bearer token authentication:
+```
+Authorization: Bearer <API_KEY>
 ```
 
-### Express Server Patterns
+## Testing Strategy
 
-- Use middleware for authentication
-- Return consistent JSON response structure
-- Include proper HTTP status codes
-- Use async route handlers with try-catch
-
-```typescript
-app.post('/execute', authenticate, async (req: Request, res: Response) => {
-  try {
-    const result = await executeTask(task, config);
-    res.json(result);
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    res.status(500).json({ success: false, error: errorMsg });
-  }
-});
+Currently, the project has no formal test suite. The package.json indicates:
+```json
+"test": "echo \"No tests yet, but compilation passes\""
 ```
 
-### Safety and Security
+**Recommended Testing Approach**:
+- Use Jest or Vitest for unit testing
+- Place tests in `src/**/*.test.ts` files
+- Test individual components (Agent, LLMProvider, ToolExecutor)
+- Mock external dependencies (LLM API calls, file system operations)
+- Include integration tests for server endpoints
 
-- Always validate user input
-- Implement rate limiting for API endpoints
-- Use authentication middleware for protected routes
-- Sanitize error messages before returning to clients
-- Never expose sensitive information in error responses
+## Deployment Considerations
 
-### CLI Commands
+### Build Process
+1. Run `npm run build` to compile TypeScript
+2. Output goes to `dist/` directory
+3. Main entry point: `dist/cli.js`
+4. Binary available as `miniclaw` command when installed globally
 
-- Use Commander.js for CLI parsing
-- Define clear option defaults
-- Provide helpful error messages
-- Support both short (`-a`) and long (`--api-key`) option forms
+### Server Deployment
+- Configure appropriate timeout values based on expected task complexity
+- Set reasonable concurrency limits based on server resources
+- Use environment variables for sensitive configuration
+- Implement proper logging and monitoring
+- Consider containerization for consistent deployment
 
-```typescript
-program
-  .command('server')
-  .option('-a, --api-key <key>', 'API key for authentication (required)')
-  .option('-p, --port <port>', 'Port to listen', '3000')
-  .action(async (options) => {
-    const apiKey = options.apiKey || process.env.MINICLAW_API_KEY;
-    if (!apiKey) {
-      console.error('Error: --api-key is required');
-      process.exit(1);
-    }
-  });
-```
+### Security Best Practices
+- Never commit API keys to version control
+- Use strong, unique API keys for server authentication
+- Regularly update dependencies for security patches
+- Monitor and limit resource usage per task
+- Implement proper input validation and sanitization
 
-### Formatting
+## Development Workflow
 
-- Use 2 spaces for indentation
-- Add spaces after commas and around operators
-- Use single quotes for strings
-- Add trailing commas in multi-line objects/arrays
+1. **Before Making Changes**:
+   - Run `npm run build` to ensure current state compiles
+   - Review existing code style and patterns
+   - Check for any open issues or TODOs in the code
 
-### Comments
+2. **During Development**:
+   - Use `npm run dev` for rapid development cycles
+   - Follow established code style conventions
+   - Add appropriate JSDoc comments for public APIs
+   - Test changes manually with both CLI and server modes
 
-- Add JSDoc comments for public APIs
-- Explain complex logic with inline comments
-- Document configuration options
-- When generating or modifying code, always include appropriate comments to enhance readability and maintainability
+3. **Before Submitting**:
+   - Run `npm run build` to ensure no TypeScript errors
+   - Test the CLI functionality
+   - Test the server endpoints
+   - Update documentation if needed
+   - Keep changes focused and minimal
 
-### File Organization
+## Common Development Tasks
 
-```
-src/
-├── cli.ts         # CLI entry point
-├── server.ts     # HTTP server
-├── agent.ts      # Main agent logic
-├── llm.ts        # LLM provider abstraction
-├── tools.ts      # Tool execution
-└── tools-schema.ts # Tool definitions
-```
+### Adding a New LLM Provider
+1. Update provider list in `llm.ts`
+2. Add base URL configuration
+3. Add model name logic in `getModelName()`
+4. Update CLI help text and documentation
 
-### Pull Request Guidelines
+### Adding a New Tool
+1. Define tool schema in `tools-schema.ts`
+2. Implement execution method in `tools.ts`
+3. Add safety checks for dangerous operations
+4. Update tool executor dispatch logic
 
-1. Run `npm run build` before submitting
-2. Ensure no TypeScript errors
-3. Test manually if possible
-4. Update documentation if needed
-5. Keep changes focused and minimal
+### Modifying Server Behavior
+1. Update server configuration interface
+2. Modify route handlers in `server.ts`
+3. Update authentication or concurrency logic as needed
+4. Test with both sync and streaming endpoints
+
+This guide should serve as the primary reference for understanding and contributing to the miniclaw project.

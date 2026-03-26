@@ -28,6 +28,10 @@ miniclaw "Analyze the code in src/ directory" -p deepseek -k YOUR_DEEPSEEK_API_K
 
 # Using a custom OpenAI-compatible API
 miniclaw "Create a file with today's date" -b https://your-custom-api.com/v1 -k YOUR_API_KEY
+
+# Using environment variables
+export LLM_API_KEY=your-llm-api-key
+miniclaw "List files in current directory"
 ```
 
 ## Supported Providers
@@ -54,13 +58,14 @@ The tool execution includes basic safety controls:
 # Build the project first (if not built)
 npm run build
 
-# Start server
+# Start server (requires both server auth key and LLM API key)
 node dist/cli.js server -k your-secret-key --port 3000 \
-  --provider deepseek --default-api-key YOUR_DEEPSEEK_API_KEY
+  --provider deepseek --llm-api-key YOUR_DEEPSEEK_API_KEY
 
 # Or use environment variables
 export MINICLAW_API_KEY=your-secret-key
-node dist/cli.js server --port 3000 --provider deepseek --default-api-key YOUR_DEEPSEEK_API_KEY
+export LLM_API_KEY=your-llm-api-key
+node dist/cli.js server --port 3000 --provider deepseek
 ```
 
 After starting, check health:
@@ -74,12 +79,12 @@ curl http://localhost:3000/health -H "Authorization: Bearer your-secret-key"
 |--------|-------------|---------|
 | `--port` | Port to listen | `3000` |
 | `--host` | Host to bind | `0.0.0.0` |
-| `-k`, `--api-key` | API authentication key (required) | - |
+| `-k`, `--api-key` | Server authentication key (required) | - |
 | `--timeout` | Default timeout (ms) | `120000` |
 | `--max-concurrent` | Max concurrent tasks | `5` |
 | `--provider` | Default LLM provider | `openai` |
-| `--default-api-key` | Default LLM API key | - |
-| `--default-base-url` | Default LLM base URL | - |
+| `--llm-api-key` | LLM API key (required) | - |
+| `-b`, `--llm-base-url` | LLM base URL for OpenAI-compatible APIs | - |
 
 ### API Endpoints
 
@@ -120,6 +125,14 @@ curl -N "http://localhost:3000/execute/stream?task=List+files&provider=deepseek&
 Events:
 - `progress`: Execution progress (thinking, executing, tool_result)
 - `result`: Final result
+
+### Environment Variables
+
+The following environment variables are supported:
+
+- `LLM_API_KEY`: LLM provider API key (used by CLI and server)
+- `MINICLAW_API_KEY`: Server authentication key (used by server mode)
+- Provider-specific model overrides: `OPENAI_MODEL`, `DEEPSEEK_MODEL`, `KIMI_MODEL`, `QWEN_MODEL`
 
 ## Architecture
 

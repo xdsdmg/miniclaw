@@ -196,6 +196,7 @@ export class Agent {
       const response = await this.llm.generateResponse(currentTask, tools);
 
       console.log(`\n=== LLM Response (Iteration ${iteration + 1}) ===`);
+      console.log(`task: ${currentTask}`);
       console.log(`Content: ${response.content || '(empty)'}`);
       if (response.toolCalls && response.toolCalls.length > 0) {
         console.log(`Tool Calls: ${JSON.stringify(response.toolCalls.map(tc => ({
@@ -249,47 +250,60 @@ export class Agent {
     console.log(`LLM Response:\n${result}\n`);
     console.log("Task completed.");
   }
-}
 
-/**
- * Top-level Execute Task Function
- * Provides stateless task execution, suitable for HTTP server scenarios
- * 
- * This function is a lightweight wrapper around the Agent class,
- * creates an Agent instance internally to execute the task,
- * and returns structured execution results (including success status, result content, error info and execution time)
- * 
- * @param task        Task description
- * @param config      Agent configuration including LLM provider and authentication info
- * @param onProgress  Progress callback (optional), used for streaming task execution progress
- * @returns Execution result containing success, result/error and executionTime
- */
-export async function executeTask(
-  task: string,
-  config: AgentConfig,
-  onProgress?: ProgressCallback
-): Promise<ExecuteResult> {
-  const startTime = Date.now();
+  /**
+   * Update Agent Configuration
+   * Updates the agent configuration and recreates the LLM provider if needed
+   * 
+   * @param newConfig Partial configuration to update
+   */
+  updateConfig(newConfig: Partial<AgentConfig>): void {
+    this.config = { ...this.config, ...newConfig };
+    this.llm = new LLMProvider(this.config);
+  }
 
-  try {
-    const agent = new Agent(config);
+  /**
+   * Execute Task (Server Entry)
+   * Provides stateless task execution, suitable for HTTP server scenarios
+   * 
+   * This method wraps the runLoop method to execute tasks and returns structured
+   * execution results (including success status, result content, error info and execution time)
+   * 
+   * @param task        Task description
+   * @param taskConfig  Optional task-specific configuration override
+   * @param onProgress  Progress callback (optional), used for streaming task execution progress
+   * @returns Execution result containing success, result/error and executionTime
+   */
+  async executeTask(
+    task: string,
+    taskConfig?: Partial<AgentConfig>,
+    onProgress?: ProgressCallback
+  ): Promise<ExecuteResult> {
+    const startTime = Date.now();
 
-    onProgress?.({ stage: 'thinking', message: `Analyzing task: ${task}` });
+    try {
+      // Update configuration if task-specific config is provided
+      if (taskConfig) {
+        this.updateConfig(taskConfig);
+      }
 
-    const result = await agent.runLoop(task, onProgress);
+      onProgress?.({ stage: 'thinking', message: `Analyzing task: ${task}` });
 
-    return {
-      success: true,
-      result,
-      executionTime: Date.now() - startTime,
-    };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : '';
-    return {
-      success: false,
-      error: `Error: ${errorMsg}${stack ? '\nStack: ' + stack : ''}`,
-      executionTime: Date.now() - startTime,
-    };
+      const result = await this.runLoop(task, onProgress);
+
+      return {
+        success: true,
+        result,
+        executionTime: Date.now() - startTime,
+      };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : '';
+      return {
+        success: false,
+        error: `Error: ${errorMsg}${stack ? '\nStack: ' + stack : ''}`,
+        executionTime: Date.now() - startTime,
+      };
+    }
   }
 }

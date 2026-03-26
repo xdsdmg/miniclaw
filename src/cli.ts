@@ -30,27 +30,33 @@ program
   .enablePositionalOptions();
 
 /**
- * Execute subcommand
- * Execute AI task directly, LLM analyzes and calls tools to complete the task
- * 
- * Options:
- *   -p, --provider <provider>  LLM provider (deepseek, kimi, qwen, openai), default: openai
- *   -k, --api-key <key>        LLM API key
- *   -b, --base-url <url>       OpenAI-compatible API base URL
- */
+* Execute subcommand
+* Execute AI task directly, LLM analyzes and calls tools to complete the task
+* 
+* Options:
+*   -p, --provider <provider>  LLM provider (deepseek, kimi, qwen, openai), default: openai
+*   -k, --api-key <key>        LLM API key
+*   -b, --base-url <url>       OpenAI-compatible API base URL
+*/
 program
   .command('execute')
   .description('Execute a task directly')
   .argument('<task>', 'The task for the AI agent to complete')
   .option('-p, --provider <provider>', 'LLM provider (deepseek, kimi, qwen, openai)', 'openai')
-  .option('-k, --api-key <key>', 'API key for the LLM provider')
-  .option('-b, --base-url <url>', 'Base URL for OpenAI-compatible APIs')
+  .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
+  .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
   .action(async (task: string, options: any) => {
     try {
+      const llmApiKey = options.llmApiKey || process.env.LLM_API_KEY;
+      if (!llmApiKey) {
+        console.error('Error: --llm-api-key is required (or set LLM_API_KEY environment variable)');
+        process.exit(1);
+      }
+
       const agent = new Agent({
         provider: options.provider,
-        apiKey: options.apiKey,
-        baseURL: options.baseUrl,
+        apiKey: llmApiKey,
+        baseURL: options.llmBaseUrl,
       });
 
       await agent.execute(task);
@@ -86,27 +92,31 @@ program
   .option('-k, --api-key <key>', 'API key for authentication (required)')
   .option('-t, --timeout <ms>', 'Default timeout in milliseconds', '120000')
   .option('-c, --max-concurrent <n>', 'Maximum concurrent tasks', '5')
-  .option('--provider <provider>', 'Default LLM provider')
-  .option('--default-api-key <key>', 'Default LLM API key')
-  .option('--default-base-url <url>', 'Default LLM base URL')
+  .option('--provider <provider>', 'Default LLM provider', 'openai')
+  .option('--llm-api-key <key>', 'Default LLM API key')
+  .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
   .action(async (options: any) => {
-    console.log(`options: ${JSON.stringify(options)}`);
-
     const apiKey = options.apiKey || process.env.MINICLAW_API_KEY;
     if (!apiKey) {
       console.error('Error: --api-key is required (or set MINICLAW_API_KEY environment variable)');
       process.exit(1);
     }
 
+    const llmApiKey = options.llmApiKey || process.env.LLM_API_KEY;
+    if (!llmApiKey) {
+      console.error('Error: --llm-api-key is required (or set LLM_API_KEY environment variable)');
+      process.exit(1);
+    }
+
     startServer({
       port: parseInt(options.port),
       host: options.host,
-      apiKey,
+      apiKey: apiKey,
       defaultTimeout: parseInt(options.timeout),
       maxConcurrent: parseInt(options.maxConcurrent),
-      defaultProvider: options.provider,
-      defaultApiKey: options.defaultApiKey,
-      defaultBaseURL: options.defaultBaseUrl,
+      provider: options.provider,
+      llmApiKey: llmApiKey,
+      llmBaseURL: options.llmBaseUrl,
     });
   });
 
@@ -117,14 +127,20 @@ program
 program
   .argument('<task>', 'The task for the AI agent to complete')
   .option('-p, --provider <provider>', 'LLM provider (deepseek, kimi, qwen, openai)', 'openai')
-  .option('-k, --api-key <key>', 'API key for the LLM provider')
-  .option('-b, --base-url <url>', 'Base URL for OpenAI-compatible APIs')
+  .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
+  .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
   .action(async (task: string, options: any) => {
     try {
+      const llmApiKey = options.llmApiKey || process.env.LLM_API_KEY;
+      if (!llmApiKey) {
+        console.error('Error: --llm-api-key is required (or set LLM_API_KEY environment variable)');
+        process.exit(1);
+      }
+
       const agent = new Agent({
         provider: options.provider,
-        apiKey: options.apiKey,
-        baseURL: options.baseUrl,
+        apiKey: llmApiKey,
+        baseURL: options.llmBaseUrl,
       });
 
       await agent.execute(task);

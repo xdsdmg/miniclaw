@@ -26,6 +26,15 @@ npm install
 npm run build
 ```
 
+### Dependencies
+
+The bot uses the following key dependencies:
+- `@larksuiteoapi/node-sdk` - Feishu Open Platform SDK
+- `commander` - CLI argument parsing
+- `dotenv` - Environment variable support
+- `typescript` - TypeScript compiler (dev dependency)
+- `@types/node` - Node.js type definitions (dev dependency)
+
 ## How It Works
 
 1. Bot connects to Feishu via WebSocket long connection
@@ -44,7 +53,7 @@ npm run build
 # Terminal 1: Start miniclaw server
 # LLM configuration is managed on the server side, here using deepseek as example
 miniclaw server --api-key your-secret-key --port 3000 \
-  --provider deepseek --default-api-key YOUR_LLM_API_KEY
+  --provider deepseek --llm-api-key YOUR_LLM_API_KEY
 ```
 
 ### Feishu Platform Setup
@@ -66,12 +75,32 @@ miniclaw server --api-key your-secret-key --port 3000 \
 
 The bot uses WebSocket long connection mode, no public URL required:
 
+#### Option 1: Using CLI Arguments
 ```bash
 npm start -- \
   --app-id <FEISHU_APP_ID> \
   --app-secret <FEISHU_APP_SECRET> \
   --server-url http://localhost:3000 \
   --server-api-key your-secret-key
+```
+
+#### Option 2: Using Environment Variables
+```bash
+# Set environment variables
+export LARK_APP_ID=your-feishu-app-id
+export LARK_APP_SECRET=your-feishu-app-secret
+export MINICLAW_API_KEY=your-miniclaw-server-key
+
+# Run bot (no arguments needed)
+npm start
+```
+
+#### Option 3: Mixed Configuration
+```bash
+export LARK_APP_ID=your-feishu-app-id
+export MINICLAW_API_KEY=your-miniclaw-server-key
+
+npm start -- --app-secret your-feishu-app-secret
 ```
 
 **Note**: The bot requires the miniclaw server to be running first. See [Prerequisites](#prerequisites).
@@ -87,10 +116,12 @@ npm start -- \
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--app-id` | Feishu App ID (required) | - |
-| `--app-secret` | Feishu App Secret (required) | - |
+| `--app-id` | Feishu App ID (from Feishu Open Platform) | `LARK_APP_ID` env var |
+| `--app-secret` | Feishu App Secret | `LARK_APP_SECRET` env var |
 | `--server-url` | Miniclaw server URL | `http://localhost:3000` |
-| `--server-api-key` | Miniclaw server API key | - |
+| `--server-api-key` | Miniclaw server API key | `MINICLAW_API_KEY` env var |
+
+**Note**: Required configuration can be provided via CLI arguments or environment variables. The bot will validate all required parameters on startup and provide helpful error messages.
 
 ## Supported LLM Providers
 
@@ -100,6 +131,23 @@ LLM providers are configured on the Miniclaw server side. See [miniclaw server d
 - `deepseek` - DeepSeek
 - `kimi` - Moonshot AI (Kimi)
 - `qwen` - Alibaba Qwen
+
+## Configuration Validation
+
+The bot performs comprehensive configuration validation on startup:
+
+- Validates that required Feishu credentials are provided (via CLI or environment variables)
+- Checks Miniclaw server API key configuration
+- Provides clear error messages for missing configuration
+- Suggests how to provide missing parameters (CLI argument or environment variable)
+
+Example error output:
+```
+[Feishu Bot] Error: Missing required configuration
+- app-id: Provide via --app-id CLI argument or LARK_APP_ID environment variable
+- app-secret: Provide via --app-secret CLI argument or LARK_APP_SECRET environment variable
+- server-api-key: Provide via --server-api-key CLI argument or MINICLAW_API_KEY environment variable
+```
 
 ## Usage
 

@@ -15,7 +15,7 @@
  *     --server-api-key <Miniclaw Server API Key>
  * 
  * Environment Variables:
- *   MINICLAW_API_KEY - Miniclaw server authentication key (can also be set via --server-api-key)
+ *   MINICLAW_API_KEY - Miniclaw server authentication key (CLI argument --server-api-key takes precedence)
  */
 
 import * as lark from '@larksuiteoapi/node-sdk';
@@ -31,31 +31,49 @@ import { BotConfig } from './types';
 const program = new Command();
 
 /**
- * Required Options:
- *   --app-id         Feishu App ID (from Feishu Open Platform)
- *   --app-secret     Feishu App Secret
+ * Configuration Options (CLI arguments take precedence over environment variables):
+ *   --app-id         Feishu App ID (from Feishu Open Platform) or LARK_APP_ID env var
+ *   --app-secret     Feishu App Secret or LARK_APP_SECRET env var
+ *   --server-url     Miniclaw server URL (default: http://localhost:3000)
+ *   --server-api-key Miniclaw server authentication key or MINICLAW_API_KEY env var
  * 
- * Optional Options:
- *   --server-url     Miniclaw server URL, default: http://localhost:3000
- *   --server-api-key Miniclaw server authentication key
+ * Required: app-id, app-secret, server-api-key (via CLI or env vars)
  */
 program
   .name('miniclaw-feishu-bot')
   .description('Feishu bot for miniclaw')
   .version('1.0.0')
-  .requiredOption('--app-id <id>', 'Feishu App ID')
-  .requiredOption('--app-secret <secret>', 'Feishu App Secret')
+  .option('--app-id <id>', 'Feishu App ID')
+  .option('--app-secret <secret>', 'Feishu App Secret')
   .option('--server-url <url>', 'Miniclaw server URL (default: http://localhost:3000)')
   .option('--server-api-key <key>', 'Miniclaw server API key');
 
 const options = program.parse(process.argv).opts();
 const config: BotConfig = {
-  appId: options.appId,
-  appSecret: options.appSecret,
+  appId: options.appId || process.env.LARK_APP_ID,
+  appSecret: options.appSecret || process.env.LARK_APP_SECRET,
   port: 0,
   serverURL: options.serverUrl || 'http://localhost:3000',
-  serverApiKey: options.serverApiKey,
+  serverApiKey: options.serverApiKey || process.env.MINICLAW_API_KEY,
 };
+
+// Validate required configuration
+const missingConfig: string[] = [];
+if (!config.appId) {
+  missingConfig.push('app-id: Provide via --app-id CLI argument or LARK_APP_ID environment variable');
+}
+if (!config.appSecret) {
+  missingConfig.push('app-secret: Provide via --app-secret CLI argument or LARK_APP_SECRET environment variable');
+}
+if (!config.serverApiKey) {
+  missingConfig.push('server-api-key: Provide via --server-api-key CLI argument or MINICLAW_API_KEY environment variable');
+}
+
+if (missingConfig.length > 0) {
+  console.error('[Feishu Bot] Error: Missing required configuration');
+  missingConfig.forEach(msg => console.error(`- ${msg}`));
+  process.exit(1);
+}
 
 const feishuClient = new FeishuClient(config);
 const miniclaw = new MiniclawClient(config);

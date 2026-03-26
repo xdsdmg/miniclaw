@@ -14,7 +14,7 @@
  */
 
 import express, { Request, Response } from 'express';
-import { executeTask, AgentConfig, ProgressEvent, ExecuteResult } from './agent';
+import { Agent, ProgressEvent, ExecuteResult } from './agent';
 
 /**
  * Server Configuration Interface
@@ -32,11 +32,11 @@ export interface ServerConfig {
   /** Maximum concurrent tasks */
   maxConcurrent: number;
   /** Default LLM provider */
-  defaultProvider?: string;
+  provider: string;
   /** Default LLM API key */
-  defaultApiKey?: string;
+  llmApiKey: string;
   /** Default LLM base URL */
-  defaultBaseURL?: string;
+  llmBaseURL?: string;
 }
 
 /**
@@ -103,12 +103,19 @@ export function createServer(config: ServerConfig) {
   const app = express();
   const concurrencyManager = new ConcurrencyManager(config.maxConcurrent);
 
+  // Create a shared Agent instance for the server
+  const agent = new Agent({
+    provider: config.provider,
+    apiKey: config.llmApiKey,
+    baseURL: config.llmBaseURL,
+  });
+
   app.use(express.json());
 
   app.use((req: Request, res: Response, next: express.NextFunction) => {
     const start = Date.now();
     const originalJson = res.json.bind(res);
-    
+
     res.json = (body: unknown) => {
       console.log('\n=== HTTP Request/Response Log ===');
       console.log('Request Headers:', JSON.stringify(req.headers, null, 2));
@@ -118,7 +125,7 @@ export function createServer(config: ServerConfig) {
       console.log('===================================\n');
       return originalJson(body);
     };
-    
+
     next();
   });
 
@@ -150,7 +157,7 @@ export function createServer(config: ServerConfig) {
    * GET /health - Health check endpoint
    * Returns current server status including running tasks and max concurrent
    */
-  app.get('/health', (req: Request, res: Response) => {
+  app.get('/health', (res: Response) => {
     const status = concurrencyManager.getStatus();
     res.json({
       status: 'ok',
@@ -202,16 +209,16 @@ export function createServer(config: ServerConfig) {
     await concurrencyManager.acquire();
 
     try {
-      const agentConfig: AgentConfig = {
-        provider: requestConfig?.provider || config.defaultProvider || 'openai',
-        apiKey: requestConfig?.apiKey || config.defaultApiKey,
-        baseURL: requestConfig?.baseURL || config.defaultBaseURL,
-      };
+      const taskConfig = requestConfig ? {
+        provider: requestConfig.provider || config.provider,
+        apiKey: requestConfig.apiKey || config.llmApiKey,
+        baseURL: requestConfig.baseURL || config.llmBaseURL,
+      } : undefined;
 
       const effectiveTimeout = timeout || config.defaultTimeout;
 
       const result = await Promise.race([
-        executeTask(task, agentConfig),
+        agent.executeTask(task, taskConfig),
         new Promise<ExecuteResult>((_, reject) =>
           setTimeout(() => reject(new Error('Task timed out')), effectiveTimeout)
         ),
@@ -280,13 +287,13 @@ export function createServer(config: ServerConfig) {
     };
 
     try {
-      const agentConfig: AgentConfig = {
-        provider: provider || config.defaultProvider || 'openai',
-        apiKey: apiKey || config.defaultApiKey,
-        baseURL: baseURL || config.defaultBaseURL,
-      };
+      const taskConfig = (provider || apiKey || baseURL) ? {
+        provider: provider || config.provider,
+        apiKey: apiKey || config.llmApiKey,
+        baseURL: baseURL || config.llmBaseURL,
+      } : undefined;
 
-      const executePromise = executeTask(task, agentConfig, (event: ProgressEvent) => {
+      const executePromise = agent.executeTask(task, taskConfig, (event: ProgressEvent) => {
         sendEvent('progress', event);
       });
 
@@ -328,7 +335,6 @@ export function startServer(config: ServerConfig) {
 
   app.listen(config.port, config.host, () => {
     console.log(`Miniclaw server started on http://${config.host}:${config.port}`);
-    console.log(`API Key: ${config.apiKey}`);
     console.log(`Max concurrent tasks: ${config.maxConcurrent}`);
     console.log(`Default timeout: ${config.defaultTimeout}ms`);
   });
