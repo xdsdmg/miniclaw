@@ -12,6 +12,7 @@
 
 import OpenAI from 'openai';
 import { tools } from './tools-schema';
+import { ChatMessage } from './prompt';
 
 /**
  * LLM Configuration Interface
@@ -76,25 +77,20 @@ export class LLMProvider {
 
   /**
    * Generate LLM response
-   * 
-   * @param prompt           User input prompt
+   *
+   * @param messages         Chat messages array (system, user, assistant, tool)
    * @param toolsParam       Optional tool definitions array
    * @param attemptFallback  Whether to retry when tools not supported (default: true)
    * @returns Response object containing content or tool calls
    */
   async generateResponse(
-    prompt: string,
+    messages: ChatMessage[],
     toolsParam?: typeof tools,
     attemptFallback: boolean = true
   ): Promise<{ content: string; toolCalls: any[] | null }> {
     try {
       const completion = await this.client.chat.completions.create({
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
+        messages: messages as any,
         model: this.getModelName(),
         temperature: 0.7,
         tools: toolsParam,
@@ -108,7 +104,7 @@ export class LLMProvider {
     } catch (error) {
       if (attemptFallback && toolsParam && this.isToolsNotSupportedError(error)) {
         console.warn("Model does not support tools, retrying without tools...");
-        return this.generateResponse(prompt, undefined, false);
+        return this.generateResponse(messages, undefined, false);
       }
       throw error;
     }

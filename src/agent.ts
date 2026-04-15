@@ -17,6 +17,12 @@
 import { LLMProvider } from './llm';
 import { ToolExecutor } from './tools';
 import { tools } from './tools-schema';
+import {
+  ChatMessage,
+  ContextBuilder,
+  extractToolDescriptions,
+  DEFAULT_SYSTEM_PROMPT,
+} from './prompt';
 
 /**
  * Agent Configuration Interface
@@ -29,6 +35,10 @@ export interface AgentConfig {
   apiKey?: string;
   /** OpenAI-compatible API base URL */
   baseURL?: string;
+  /** System prompt defining the agent's identity and behavior */
+  systemPrompt?: string;
+  /** Feature-specific instructions */
+  featurePrompts?: string[];
 }
 
 /**
@@ -97,6 +107,8 @@ const MAX_ITERATIONS = 10;
 export class Agent {
   private llm: LLMProvider;
   private toolExecutor: ToolExecutor;
+  private systemPrompt: string;
+  private featurePrompts: string[];
 
   /**
    * Constructor
@@ -105,99 +117,58 @@ export class Agent {
   constructor(private config: AgentConfig) {
     this.llm = new LLMProvider(config);
     this.toolExecutor = new ToolExecutor();
-  }
-
-  /**
-   * Handle Tool Calls
-   * Parses tool call requests from LLM, executes corresponding tool functions,
-   * and returns updated task description
-   * 
-   * Execution Steps:
-   *   1. Iterate through all tool calls
-   *   2. Parse tool name and arguments
-   *   3. Trigger executing progress event
-   *   4. Execute tool and get result
-   *   5. Trigger tool_result progress event
-   *   6. Append tool result to task description, return to LLM for continued processing
-   * 
-   * @param toolCalls    LLM returned tool call request list
-   * @param originalTask  Original task description
-   * @param onProgress    Progress callback function
-   * @returns Updated task description containing tool execution results
-   */
-  private async handleToolCalls(
-    toolCalls: Array<{ function: { name: string; arguments: string } }>,
-    originalTask: string,
-    onProgress?: ProgressCallback
-  ): Promise<string> {
-    let currentTask = originalTask;
-
-    for (const toolCall of toolCalls) {
-      const toolName = toolCall.function.name;
-      const args = JSON.parse(toolCall.function.arguments);
-
-      onProgress?.({
-        stage: 'executing',
-        message: `Executing ${toolName}`,
-        tool: toolName,
-        args,
-      });
-
-      try {
-        const result = await this.toolExecutor.execute(toolName, args);
-        onProgress?.({
-          stage: 'tool_result',
-          message: `Tool ${toolName} completed`,
-          tool: toolName,
-          toolResult: result,
-        });
-
-        currentTask = `Tool ${toolName} returned:\n${result}\n\nContinue with the original task: ${originalTask}`;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        onProgress?.({
-          stage: 'tool_result',
-          message: `Tool ${toolName} failed: ${errorMsg}`,
-          tool: toolName,
-          toolResult: `Error: ${errorMsg}`,
-        });
-        currentTask = `Error executing tool ${toolName}: ${error}. Please adjust your approach for: ${originalTask}`;
-      }
-    }
-
-    return currentTask;
+    this.systemPrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    this.featurePrompts = config.featurePrompts || [];
   }
 
   /**
    * Run Agent Loop
    * Core execution loop: interact with LLM and handle tool calls until task completion or max iterations
-   * 
+   *
    * Loop Logic:
-   *   1. Send current task and available tools to LLM
-   *   2. LLM returns response (final result or tool calls)
-   *   3. If tool calls exist, execute tools and update task description
+   *   1. Build context (system prompt + history + current task) via ContextBuilder
+   *   2. Send context and available tools to LLM
+   *   3. If LLM returns tool calls, execute tools and append results to history
    *   4. If no tool calls, return LLM's response content as final result
-   *   5. Repeat steps 1-4 until max iterations reached
-   * 
-   * @param task       Task description
+   *   5. Repeat steps 2-4 until max iterations reached
+   *
+   * @param input       Task description
    * @param onProgress Progress callback function for real-time execution progress
    * @returns Task execution result (LLM's final response content)
    */
   public async runLoop(
-    task: string,
+    input: string,
     onProgress?: ProgressCallback
   ): Promise<string> {
-    let currentTask = task;
+    // Build initial messages: system prompt + user task
+    const toolDescs = extractToolDescriptions(tools);
+    const initialMessages = new ContextBuilder({
+      systemPrompt: this.systemPrompt,
+      featurePrompts: this.featurePrompts,
+      toolDescriptions: toolDescs,
+      userMessage: input,
+    }).build();
+
+    // Split into prefix (system) and history (user message)
+    // Prefix is built once and reused; history accumulates across iterations
+    const prefixMessages = initialMessages.slice(0, -1);
+    const history: ChatMessage[] = [initialMessages[initialMessages.length - 1]];
+
     let iteration = 0;
 
     while (iteration < MAX_ITERATIONS) {
       onProgress?.({ stage: 'thinking', message: `Iteration ${iteration + 1}: Thinking...` });
 
-      const response = await this.llm.generateResponse(currentTask, tools);
+      const allMessages = [...prefixMessages, ...history];
 
-      console.log(`\n=== LLM Response (Iteration ${iteration + 1}) ===`);
-      console.log(`task: ${currentTask}`);
-      console.log(`Content: ${response.content || '(empty)'}`);
+      console.log(`\n=== LLM Call, Iteration ${iteration + 1} ===`);
+      console.log(`Messages: ${JSON.stringify(allMessages.map(m => ({ role: m.role, content: m.content })))}`);
+      console.log("\n");
+
+      const response = await this.llm.generateResponse(allMessages, tools);
+
+      console.log(`Output: ${response.content || '(empty)'}`);
+      console.log("\n");
       if (response.toolCalls && response.toolCalls.length > 0) {
         console.log(`Tool Calls: ${JSON.stringify(response.toolCalls.map(tc => ({
           name: tc.function.name,
@@ -206,9 +177,60 @@ export class Agent {
       }
       console.log('==========================================\n');
 
-      if (response.toolCalls) {
-        currentTask = await this.handleToolCalls(response.toolCalls, task, onProgress);
+      if (response.toolCalls && response.toolCalls.length > 0) {
+        // Record assistant message with tool calls
+        history.push({
+          role: 'assistant',
+          content: response.content || '',
+          tool_calls: response.toolCalls,
+        });
+
+        // Execute tools and record results as proper tool messages
+        for (const toolCall of response.toolCalls) {
+          const toolName = toolCall.function.name;
+          const args = JSON.parse(toolCall.function.arguments);
+
+          onProgress?.({
+            stage: 'executing',
+            message: `Executing ${toolName}`,
+            tool: toolName,
+            args,
+          });
+
+          try {
+            const result = await this.toolExecutor.execute(toolName, args);
+            console.log(`tool ${toolName} execution result: ${result}`)
+            onProgress?.({
+              stage: 'tool_result',
+              message: `Tool ${toolName} completed`,
+              tool: toolName,
+              toolResult: result,
+            });
+
+            history.push({
+              role: 'tool',
+              content: result,
+              tool_call_id: toolCall.id,
+            });
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            onProgress?.({
+              stage: 'tool_result',
+              message: `Tool ${toolName} failed: ${errorMsg}`,
+              tool: toolName,
+              toolResult: `Error: ${errorMsg}`,
+            });
+
+            history.push({
+              role: 'tool',
+              content: `Error: ${errorMsg}`,
+              tool_call_id: toolCall.id,
+            });
+          }
+        }
       } else {
+        // Final response — no tool calls
+        history.push({ role: 'assistant', content: response.content });
         onProgress?.({ stage: 'completed', message: 'Task completed' });
         return response.content;
       }
