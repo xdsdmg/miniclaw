@@ -23,6 +23,7 @@ import {
   extractToolDescriptions,
   DEFAULT_SYSTEM_PROMPT,
 } from './prompt';
+import { logger } from './logger';
 
 /**
  * Agent Configuration Interface
@@ -161,21 +162,19 @@ export class Agent {
 
       const allMessages = [...prefixMessages, ...history];
 
-      console.log(`\n=== LLM Call, Iteration ${iteration + 1} ===`);
-      console.log(`Messages: ${JSON.stringify(allMessages.map(m => ({ role: m.role, content: m.content })))}`);
-      console.log("\n");
+      logger.debug(`LLM Call, Iteration ${iteration + 1}`, {
+        messages: allMessages.map(m => ({ role: m.role, content: m.content })),
+      });
 
       const response = await this.llm.generateResponse(allMessages, tools);
 
-      console.log(`Output: ${response.content || '(empty)'}`);
-      console.log("\n");
-      if (response.toolCalls && response.toolCalls.length > 0) {
-        console.log(`Tool Calls: ${JSON.stringify(response.toolCalls.map(tc => ({
+      logger.debug(`LLM Response, Iteration ${iteration + 1}`, {
+        content: response.content || '(empty)',
+        toolCalls: response.toolCalls?.map(tc => ({
           name: tc.function.name,
-          arguments: tc.function.arguments
-        })))}`);
-      }
-      console.log('==========================================\n');
+          arguments: tc.function.arguments,
+        })),
+      });
 
       if (response.toolCalls && response.toolCalls.length > 0) {
         // Record assistant message with tool calls
@@ -199,7 +198,7 @@ export class Agent {
 
           try {
             const result = await this.toolExecutor.execute(toolName, args);
-            console.log(`tool ${toolName} execution result: ${result}`)
+            logger.debug(`Tool ${toolName} result`, result);
             onProgress?.({
               stage: 'tool_result',
               message: `Tool ${toolName} completed`,
@@ -238,6 +237,7 @@ export class Agent {
       iteration++;
     }
 
+    logger.warn('Max iterations reached');
     const maxReachedMsg = "Max iterations reached. Stopping execution.";
     onProgress?.({ stage: 'completed', message: maxReachedMsg });
     return maxReachedMsg;
@@ -250,18 +250,18 @@ export class Agent {
    * @param task Task description
    */
   async execute(task: string): Promise<void> {
-    console.log(`Executing task: ${task}\n`);
+    logger.info(`Executing task: ${task}`);
 
     const onProgress = (event: ProgressEvent) => {
       switch (event.stage) {
         case 'thinking':
-          console.log(`Thinking: ${event.message}\n`);
+          logger.info(`Thinking: ${event.message}`);
           break;
         case 'executing':
-          console.log(`Executing ${event.tool}: ${JSON.stringify(event.args)}\n`);
+          logger.info(`Executing ${event.tool}: ${JSON.stringify(event.args)}\n`);
           break;
         case 'tool_result':
-          console.log(`Tool Result:\n${event.toolResult}\n`);
+          logger.info(`Tool Result:\n${event.toolResult}\n`);
           break;
         case 'completed':
           break;
@@ -269,8 +269,7 @@ export class Agent {
     };
 
     const result = await this.runLoop(task, onProgress);
-    console.log(`LLM Response:\n${result}\n`);
-    console.log("Task completed.");
+    logger.info(`Task completed, result: ${result}`);
   }
 
   /**

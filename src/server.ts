@@ -15,6 +15,7 @@
 
 import express, { Request, Response } from 'express';
 import { Agent, ProgressEvent, ExecuteResult } from './agent';
+import { logger } from './logger';
 
 /**
  * Server Configuration Interface
@@ -117,12 +118,12 @@ export function createServer(config: ServerConfig) {
     const originalJson = res.json.bind(res);
 
     res.json = (body: unknown) => {
-      console.log('\n=== HTTP Request/Response Log ===');
-      console.log('Request Headers:', JSON.stringify(req.headers, null, 2));
-      console.log('Request Body:', JSON.stringify(req.body, null, 2));
-      console.log('Response:', JSON.stringify(body, null, 2));
-      console.log(`Response Time: ${Date.now() - start}ms`);
-      console.log('===================================\n');
+      logger.info(`${req.method} ${req.path}`, {
+        headers: req.headers,
+        body: req.body,
+        response: body,
+        responseTime: `${Date.now() - start}ms`,
+      });
       return originalJson(body);
     };
 
@@ -334,8 +335,9 @@ export function startServer(config: ServerConfig) {
   const app = createServer(config);
 
   app.listen(config.port, config.host, () => {
-    console.log(`Miniclaw server started on http://${config.host}:${config.port}`);
-    console.log(`Max concurrent tasks: ${config.maxConcurrent}`);
-    console.log(`Default timeout: ${config.defaultTimeout}ms`);
+    logger.info(`Miniclaw server started on http://${config.host}:${config.port}`, {
+      maxConcurrent: config.maxConcurrent,
+      defaultTimeout: config.defaultTimeout,
+    });
   });
 }

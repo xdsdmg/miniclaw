@@ -13,6 +13,7 @@
 import OpenAI from 'openai';
 import { tools } from './tools-schema';
 import { ChatMessage } from './prompt';
+import { logger } from './logger';
 
 /**
  * LLM Configuration Interface
@@ -95,6 +96,11 @@ export class LLMProvider {
         temperature: 0.7,
         tools: toolsParam,
       });
+      if (completion.usage) {
+        const usage = completion.usage;
+        const cached = (usage as any).prompt_tokens_details?.cached_tokens || 0;
+        logger.debug(`Token usage — prompt: ${usage.prompt_tokens}, completion: ${usage.completion_tokens}, cached: ${cached}, total: ${usage.total_tokens}`);
+      }
 
       const message = completion.choices[0]?.message;
       return {
@@ -103,7 +109,7 @@ export class LLMProvider {
       };
     } catch (error) {
       if (attemptFallback && toolsParam && this.isToolsNotSupportedError(error)) {
-        console.warn("Model does not support tools, retrying without tools...");
+        logger.warn("Model does not support tools, retrying without tools...");
         return this.generateResponse(messages, undefined, false);
       }
       throw error;
