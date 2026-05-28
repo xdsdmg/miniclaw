@@ -6,3 +6,5 @@ dist
 *.d.ts
 !dist/*.d.ts
 test.sh
+logs
+data

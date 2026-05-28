@@ -114,7 +114,7 @@ const eventDispatcher = new lark.EventDispatcher({}).register({
 
     setImmediate(async () => {
       try {
-        const result = await miniclaw.execute(userMessage);
+        const result = await miniclaw.execute(userMessage, senderId);
         const responseText = result || 'Task completed.';
         await feishuClient.sendMessage('open_id', senderId, responseText);
         console.log('[Feishu Bot] Sent response to user');

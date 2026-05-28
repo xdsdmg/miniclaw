@@ -39,11 +39,12 @@ export class MiniclawClient {
   /**
    * Execute Task Synchronously
    * Send task request to Miniclaw server, wait for completion and return result
-   * 
+   *
    * @param task Task description
+   * @param userId Optional user ID for memory system
    * @returns Execution result text
    */
-  async execute(task: string): Promise<string> {
+  async execute(task: string, userId?: string): Promise<string> {
     const serverURL = this.config.serverURL;
     const apiKey = this.config.serverApiKey;
 
@@ -63,6 +64,7 @@ export class MiniclawClient {
         },
         body: JSON.stringify({
           task,
+          userId,
         }),
         signal: controller.signal,
       });
@@ -87,17 +89,18 @@ export class MiniclawClient {
   /**
    * Execute Task with Streaming
    * Get real-time task execution progress via Server-Sent Events
-   * 
+   *
    * Progress Event Types:
    *   🤔 thinking   - LLM is thinking
    *   ⚙️ executing  - Tool is being executed
    *   📋 tool_result - Tool execution completed
    *   ✅ completed  - Task completed
-   * 
+   *
    * @param task Task description
+   * @param userId Optional user ID for memory system
    * @yield Progress event messages
    */
-  async *executeStream(task: string): AsyncGenerator<string> {
+  async *executeStream(task: string, userId?: string): AsyncGenerator<string> {
     const serverURL = this.config.serverURL || 'http://localhost:3000';
     const apiKey = this.config.serverApiKey || process.env.MINICLAW_API_KEY;
 
@@ -108,6 +111,7 @@ export class MiniclawClient {
 
     const params = new URLSearchParams({
       task,
+      userId: userId || '', // Add userId to query parameters
     });
 
     try {

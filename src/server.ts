@@ -174,6 +174,7 @@ export function createServer(config: ServerConfig) {
    * Request Body:
    *   {
    *     "task": "Task description",
+   *     "userId": "user-123",  // Optional, user ID for memory system
    *     "config": {          // Optional, override default LLM config
    *       "provider": "openai",
    *       "apiKey": "...",
@@ -190,7 +191,7 @@ export function createServer(config: ServerConfig) {
    *   }
    */
   app.post('/execute', authenticate, async (req: Request, res: Response) => {
-    const { task, config: requestConfig, timeout } = req.body;
+    const { task, userId, config: requestConfig, timeout } = req.body;
 
     if (!task || typeof task !== 'string') {
       return res.status(400).json({
@@ -219,7 +220,7 @@ export function createServer(config: ServerConfig) {
       const effectiveTimeout = timeout || config.defaultTimeout;
 
       const result = await Promise.race([
-        agent.executeTask(task, taskConfig),
+        agent.executeTask(task, userId, taskConfig),
         new Promise<ExecuteResult>((_, reject) =>
           setTimeout(() => reject(new Error('Task timed out')), effectiveTimeout)
         ),
@@ -255,6 +256,7 @@ export function createServer(config: ServerConfig) {
    */
   app.get('/execute/stream', authenticate, async (req: Request, res: Response) => {
     const task = req.query.task as string;
+    const userId = req.query.userId as string;
     const provider = req.query.provider as string;
     const apiKey = req.query.apiKey as string;
     const baseURL = req.query.baseURL as string;
@@ -294,7 +296,7 @@ export function createServer(config: ServerConfig) {
         baseURL: baseURL || config.llmBaseURL,
       } : undefined;
 
-      const executePromise = agent.executeTask(task, taskConfig, (event: ProgressEvent) => {
+      const executePromise = agent.executeTask(task, userId, taskConfig, (event: ProgressEvent) => {
         sendEvent('progress', event);
       });
 
