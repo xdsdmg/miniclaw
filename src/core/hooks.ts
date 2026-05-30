@@ -470,18 +470,18 @@ export class HookManagerImpl implements HookManager {
         context: TContext
     ): void {
         const handlers = this.hooks.get(hookName);
-        if (!handlers || handlers.length === 0) {
+        const handlerCount = handlers?.length || 0;
+        logger.debug(`[HookManager] Executing hook "${hookName}" with ${handlerCount} handlers`);
+
+        if (handlerCount === 0) {
             return;
         }
 
-        logger.debug(`[HookManager] Executing hook "${hookName}" with ${handlers.length} handlers`);
-
-        for (const handler of handlers) {
+        for (const handler of handlers!) {
             try {
                 handler.handler(context);
             } catch (error) {
                 logger.error(`[HookManager] Error in handler "${handler.id}" for hook "${hookName}":`, String(error));
-                // Continue executing other handlers even if one fails
             }
         }
     }
@@ -491,14 +491,14 @@ export class HookManagerImpl implements HookManager {
         context: TContext
     ): Promise<void> {
         const handlers = this.hooks.get(hookName);
-        if (!handlers || handlers.length === 0) {
+        const handlerCount = handlers?.length || 0;
+        logger.debug(`[HookManager] Executing async hook "${hookName}" with ${handlerCount} handlers`);
+
+        if (handlerCount === 0) {
             return;
         }
 
-        logger.debug(`[HookManager] Executing async hook "${hookName}" with ${handlers.length} handlers`);
-
-        // Execute handlers sequentially (in priority order)
-        for (const handler of handlers) {
+        for (const handler of handlers!) {
             try {
                 const result = handler.handler(context);
                 if (result instanceof Promise) {
@@ -506,7 +506,6 @@ export class HookManagerImpl implements HookManager {
                 }
             } catch (error) {
                 logger.error(`[HookManager] Error in handler "${handler.id}" for hook "${hookName}":`, String(error));
-                // Continue executing other handlers even if one fails
             }
         }
     }

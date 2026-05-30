@@ -203,18 +203,18 @@ export class Agent {
       logger.info(`[Agent] Created directory: ${dbDir}`);
     }
 
-    // Create memories directory (expand ~ to home directory)
-    const expandedMemoriesDir = memoriesDir.replace('~/', process.env.HOME + '/');
-    if (!fs.existsSync(expandedMemoriesDir)) {
-      fs.mkdirSync(expandedMemoriesDir, { recursive: true });
-      logger.info(`[Agent] Created directory: ${expandedMemoriesDir}`);
+    // Create memories directory
+    const resolvedMemoriesDir = path.resolve(memoriesDir);
+    if (!fs.existsSync(resolvedMemoriesDir)) {
+      fs.mkdirSync(resolvedMemoriesDir, { recursive: true });
+      logger.info(`[Agent] Created directory: ${resolvedMemoriesDir}`);
     }
 
-    // Create skills directory (expand ~ to home directory)
-    const expandedSkillsDir = skillsDir.replace('~/', process.env.HOME + '/');
-    if (!fs.existsSync(expandedSkillsDir)) {
-      fs.mkdirSync(expandedSkillsDir, { recursive: true });
-      logger.info(`[Agent] Created directory: ${expandedSkillsDir}`);
+    // Create skills directory
+    const resolvedSkillsDir = path.resolve(skillsDir);
+    if (!fs.existsSync(resolvedSkillsDir)) {
+      fs.mkdirSync(resolvedSkillsDir, { recursive: true });
+      logger.info(`[Agent] Created directory: ${resolvedSkillsDir}`);
     }
   }
 
@@ -225,8 +225,8 @@ export class Agent {
   private initializeMemoryHooks(): void {
     try {
       const dbPath = this.config.memoryDbPath || './data/miniclaw.db';
-      const memoriesDir = this.config.memoriesDir || '~/.miniclaw/memories';
-      const skillsDir = this.config.skillsDir || '~/.miniclaw/skills';
+      const memoriesDir = this.config.memoriesDir || './.miniclaw/memories';
+      const skillsDir = this.config.skillsDir || './.miniclaw/skills';
 
       // Ensure required directories exist
       this.ensureDirectoriesExist(dbPath, memoriesDir, skillsDir);

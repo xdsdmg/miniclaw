@@ -8,10 +8,10 @@ import path from 'path';
 // ============================================================================
 
 export interface MemoryConfig {
-    dbPath: string;
-    memoriesDir: string;
-    skillsDir: string;
-    promptMemoryCharLimit?: number;
+  dbPath: string;
+  memoriesDir: string;
+  skillsDir: string;
+  promptMemoryCharLimit?: number;
 }
 
 // ============================================================================
@@ -79,8 +79,8 @@ export interface MemoryConfig {
  * // Initialize once at application startup
  * const memoryManager = new MemoryManager({
  *     dbPath: './data/miniclaw.db',
- *     memoriesDir: '~/.miniclaw/memories',
- *     skillsDir: '~/.miniclaw/skills'
+ *     memoriesDir: './.miniclaw/memories',
+ *     skillsDir: './.miniclaw/skills'
  * }, llmProvider);
  *
  * // Agent uses MemoryManager for all memory operations
@@ -127,235 +127,235 @@ export interface MemoryConfig {
  * └──────────────────┘  └────────────────────────────────┘
  */
 export class MemoryManager {
-    private storage: MemoryStorage;
-    private promptMemory: PromptMemory;
-    private llmProvider?: LLMProvider;
+  private storage: MemoryStorage;
+  private promptMemory: PromptMemory;
+  private llmProvider?: LLMProvider;
 
-    constructor(config: MemoryConfig, llmProvider?: LLMProvider) {
-        // Initialize MemoryStorage
-        this.storage = new MemoryStorage(config.dbPath);
+  constructor(config: MemoryConfig, llmProvider?: LLMProvider) {
+    // Initialize MemoryStorage
+    this.storage = new MemoryStorage(config.dbPath);
 
-        // Initialize PromptMemory
-        this.llmProvider = llmProvider;
-        this.promptMemory = new PromptMemory({
-            memoryPath: path.join(config.memoriesDir, 'MEMORY.md'),
-            userPath: path.join(config.memoriesDir, 'USER.md'),
-            memoryCharLimit: config.promptMemoryCharLimit || 2200,
-            userCharLimit: 1375
-        }, llmProvider);
-    }
+    // Initialize PromptMemory
+    this.llmProvider = llmProvider;
+    this.promptMemory = new PromptMemory({
+      memoryPath: path.join(config.memoriesDir, 'MEMORY.md'),
+      userPath: path.join(config.memoriesDir, 'USER.md'),
+      memoryCharLimit: config.promptMemoryCharLimit || 2200,
+      userCharLimit: 1375
+    }, llmProvider);
+  }
 
-    // ========================================================================
-    // MemoryStorage Delegation
-    // ========================================================================
+  // ========================================================================
+  // MemoryStorage Delegation
+  // ========================================================================
 
-    /**
-     * Create a new conversation
-     */
-    createConversation(conversation: Conversation): void {
-        this.storage.createConversation(conversation);
-    }
+  /**
+   * Create a new conversation
+   */
+  createConversation(conversation: Conversation): void {
+    this.storage.createConversation(conversation);
+  }
 
-    /**
-     * Update conversation
-     */
-    updateConversation(id: string, updates: Partial<Conversation>): void {
-        this.storage.updateConversation(id, updates);
-    }
+  /**
+   * Update conversation
+   */
+  updateConversation(id: string, updates: Partial<Conversation>): void {
+    this.storage.updateConversation(id, updates);
+  }
 
-    /**
-     * Get conversation by ID
-     */
-    getConversation(id: string): Conversation | null {
-        return this.storage.getConversation(id);
-    }
+  /**
+   * Get conversation by ID
+   */
+  getConversation(id: string): Conversation | null {
+    return this.storage.getConversation(id);
+  }
 
-    /**
-     * List conversations with optional filters
-     */
-    listConversations(filter?: {
-        userId?: string;
-        status?: 'active' | 'completed' | 'error';
-        startTime?: number;
-        endTime?: number;
-        limit?: number;
-    }): Conversation[] {
-        return this.storage.listConversations(filter);
-    }
+  /**
+   * List conversations with optional filters
+   */
+  listConversations(filter?: {
+    userId?: string;
+    status?: 'active' | 'completed' | 'error';
+    startTime?: number;
+    endTime?: number;
+    limit?: number;
+  }): Conversation[] {
+    return this.storage.listConversations(filter);
+  }
 
-    /**
-     * Save LLM interaction
-     */
-    saveLLMInteraction(
-        conversationId: string,
-        request: string,
-        response: string,
-        model: string,
-        tokens?: number,
-        cached?: boolean
-    ): void {
-        this.storage.saveLLMInteraction({
-            id: crypto.randomUUID(),
-            conversationId,
-            timestamp: Date.now(),
-            requestPrompt: request,
-            responseText: response,
-            modelName: model,
-            tokensUsed: tokens,
-            cached: cached || false
-        });
-    }
+  /**
+   * Save LLM interaction
+   */
+  saveLLMInteraction(
+    conversationId: string,
+    request: string,
+    response: string,
+    model: string,
+    tokens?: number,
+    cached?: boolean
+  ): void {
+    this.storage.saveLLMInteraction({
+      id: crypto.randomUUID(),
+      conversationId,
+      timestamp: Date.now(),
+      requestPrompt: request,
+      responseText: response,
+      modelName: model,
+      tokensUsed: tokens,
+      cached: cached || false
+    });
+  }
 
-    /**
-     * Get LLM interactions for a conversation
-     */
-    getLLMInteractions(conversationId: string): any[] {
-        return this.storage.getLLMInteractions(conversationId);
-    }
+  /**
+   * Get LLM interactions for a conversation
+   */
+  getLLMInteractions(conversationId: string): any[] {
+    return this.storage.getLLMInteractions(conversationId);
+  }
 
-    /**
-     * FTS5 full-text search
-     */
-    fts5Search(query: string, limit: number = 10): any[] {
-        return this.storage.fts5Search(query, limit);
-    }
+  /**
+   * FTS5 full-text search
+   */
+  fts5Search(query: string, limit: number = 10): any[] {
+    return this.storage.fts5Search(query, limit);
+  }
 
-    /**
-     * Save tool execution
-     */
-    saveToolExecution(
-        conversationId: string,
-        toolName: string,
-        args: Record<string, any>,
-        result: string,
-        execTime: number,
-        success: boolean,
-        error?: string
-    ): void {
-        this.storage.saveToolExecution({
-            id: crypto.randomUUID(),
-            conversationId,
-            timestamp: Date.now(),
-            toolName,
-            toolArguments: args,
-            executionResult: result,
-            executionTimeMs: execTime,
-            success,
-            errorMessage: error
-        });
-    }
+  /**
+   * Save tool execution
+   */
+  saveToolExecution(
+    conversationId: string,
+    toolName: string,
+    args: Record<string, any>,
+    result: string,
+    execTime: number,
+    success: boolean,
+    error?: string
+  ): void {
+    this.storage.saveToolExecution({
+      id: crypto.randomUUID(),
+      conversationId,
+      timestamp: Date.now(),
+      toolName,
+      toolArguments: args,
+      executionResult: result,
+      executionTimeMs: execTime,
+      success,
+      errorMessage: error
+    });
+  }
 
-    /**
-     * Get tool executions for a conversation
-     */
-    getToolExecutions(conversationId: string): any[] {
-        return this.storage.getToolExecutions(conversationId);
-    }
+  /**
+   * Get tool executions for a conversation
+   */
+  getToolExecutions(conversationId: string): any[] {
+    return this.storage.getToolExecutions(conversationId);
+  }
 
-    /**
-     * Search tool executions by name
-     */
-    searchToolExecutions(toolName: string, limit?: number): any[] {
-        return this.storage.searchToolExecutions(toolName, limit);
-    }
+  /**
+   * Search tool executions by name
+   */
+  searchToolExecutions(toolName: string, limit?: number): any[] {
+    return this.storage.searchToolExecutions(toolName, limit);
+  }
 
-    // ========================================================================
-    // PromptMemory Delegation
-    // ========================================================================
+  // ========================================================================
+  // PromptMemory Delegation
+  // ========================================================================
 
-    /**
-     * Load frozen snapshot (for prefix caching)
-     * Called at session start
-     */
-    async loadFrozenSnapshot(): Promise<string> {
-        return this.promptMemory.loadFrozenSnapshot();
-    }
+  /**
+   * Load frozen snapshot (for prefix caching)
+   * Called at session start
+   */
+  async loadFrozenSnapshot(): Promise<string> {
+    return this.promptMemory.loadFrozenSnapshot();
+  }
 
-    /**
-     * Add information to MEMORY.md or USER.md
-     */
-    async addToMemory(category: 'memory' | 'user', content: string): Promise<void> {
-        await this.promptMemory.addToMemory(category, content, this.llmProvider);
-    }
+  /**
+   * Add information to MEMORY.md or USER.md
+   */
+  async addToMemory(category: 'memory' | 'user', content: string): Promise<void> {
+    await this.promptMemory.addToMemory(category, content, this.llmProvider);
+  }
 
-    /**
-     * Replace content in memory
-     */
-    async replaceInMemory(category: 'memory' | 'user', oldText: string, newText: string): Promise<void> {
-        await this.promptMemory.replaceInMemory(category, oldText, newText);
-    }
+  /**
+   * Replace content in memory
+   */
+  async replaceInMemory(category: 'memory' | 'user', oldText: string, newText: string): Promise<void> {
+    await this.promptMemory.replaceInMemory(category, oldText, newText);
+  }
 
-    /**
-     * Remove content from memory
-     */
-    async removeFromMemory(category: 'memory' | 'user', text: string): Promise<void> {
-        await this.promptMemory.removeFromMemory(category, text);
-    }
+  /**
+   * Remove content from memory
+   */
+  async removeFromMemory(category: 'memory' | 'user', text: string): Promise<void> {
+    await this.promptMemory.removeFromMemory(category, text);
+  }
 
-    /**
-     * Get memory statistics
-     */
-    async getStats(): Promise<{
-        memory: { current: number; limit: number };
-        user: { current: number; limit: number };
-    }> {
-        return this.promptMemory.getStats();
-    }
+  /**
+   * Get memory statistics
+   */
+  async getStats(): Promise<{
+    memory: { current: number; limit: number };
+    user: { current: number; limit: number };
+  }> {
+    return this.promptMemory.getStats();
+  }
 
-    /**
-     * Get PromptMemory instance
-     * Provides access to loadFrozenSnapshot() and invalidateSnapshot()
-     * Used by SessionManager and Agent
-     */
-    getPromptMemory(): PromptMemory {
-        return this.promptMemory;
-    }
+  /**
+   * Get PromptMemory instance
+   * Provides access to loadFrozenSnapshot() and invalidateSnapshot()
+   * Used by SessionManager and Agent
+   */
+  getPromptMemory(): PromptMemory {
+    return this.promptMemory;
+  }
 
-    // ========================================================================
-    // Conversation Lifecycle
-    // ========================================================================
+  // ========================================================================
+  // Conversation Lifecycle
+  // ========================================================================
 
-    /**
-     * Start a new conversation
-     */
-    startConversation(userId?: string): string {
-        const id = crypto.randomUUID();
+  /**
+   * Start a new conversation
+   */
+  startConversation(userId?: string): string {
+    const id = crypto.randomUUID();
 
-        this.storage.createConversation({
-            id,
-            userId,
-            startTime: Date.now(),
-            status: 'active'
-        });
+    this.storage.createConversation({
+      id,
+      userId,
+      startTime: Date.now(),
+      status: 'active'
+    });
 
-        return id;
-    }
+    return id;
+  }
 
-    /**
-     * End a conversation
-     */
-    endConversation(conversationId: string, status: 'completed' | 'error'): void {
-        this.storage.updateConversation(conversationId, {
-            endTime: Date.now(),
-            status
-        });
-    }
+  /**
+   * End a conversation
+   */
+  endConversation(conversationId: string, status: 'completed' | 'error'): void {
+    this.storage.updateConversation(conversationId, {
+      endTime: Date.now(),
+      status
+    });
+  }
 
-    // ========================================================================
-    // Utility Methods
-    // ========================================================================
+  // ========================================================================
+  // Utility Methods
+  // ========================================================================
 
-    /**
-     * Close database connection
-     */
-    close(): void {
-        this.storage.close();
-    }
+  /**
+   * Close database connection
+   */
+  close(): void {
+    this.storage.close();
+  }
 
-    /**
-     * Check if conversation exists
-     */
-    hasConversation(id: string): boolean {
-        return this.storage.getConversation(id) !== null;
-    }
+  /**
+   * Check if conversation exists
+   */
+  hasConversation(id: string): boolean {
+    return this.storage.getConversation(id) !== null;
+  }
 }

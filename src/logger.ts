@@ -75,8 +75,8 @@ class Logger {
   private writeToFile(formatted: string): void {
     try {
       fs.appendFileSync(this.getLogFilePath(), formatted + '\n');
-    } catch {
-      // Silently ignore file write errors
+    } catch (err) {
+      console.error(`[Logger] Failed to write to log file ${this.getLogFilePath()}:`, err instanceof Error ? err.message : String(err));
     }
   }
 
