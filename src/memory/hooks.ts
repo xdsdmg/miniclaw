@@ -44,11 +44,8 @@ export class MemoryHooks {
     // Attach conversationId to context for use in subsequent hooks
     context.conversationId = conversationId;
 
-    // Add user task to session history if userId is provided
-    if (context.userId) {
-      this.sessionManager.addMessage(context.userId, 'user', context.task);
-      logger.debug(`[MemoryHooks] Added user message to session for user ${context.userId}`);
-    }
+    // Note: user message is added in afterExecute, not here,
+    // so that afterStableContext only sees historical messages.
   }
 
   /**
@@ -179,6 +176,12 @@ export class MemoryHooks {
     if (!this.memoryManager) return;
 
     logger.debug(`[MemoryHooks] afterExecute: Task completed in ${context.duration}ms, checking learning triggers`);
+
+    // Add user task to session history for future conversations
+    if (context.userId) {
+      this.sessionManager.addMessage(context.userId, 'user', context.task);
+      logger.debug(`[MemoryHooks] Added user message to session for user ${context.userId}`);
+    }
 
     // Check learning triggers
     const agentContext = {

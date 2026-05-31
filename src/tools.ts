@@ -288,7 +288,7 @@ export class ToolExecutor {
     }
 
     const tempDir = os.tmpdir();
-    const fileName = `miniclaw_python_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.py`;
+    const fileName = `miniclaw_python_${Date.now()}_${Math.random().toString(36).substring(2, 11)}.py`;
     const filePath = path.join(tempDir, fileName);
 
     try {

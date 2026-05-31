@@ -341,11 +341,12 @@ export class Agent {
       : systemPrompt;
 
     // Build initial messages: system prompt + user task
-    const toolDescs = extractToolDescriptions(tools);
+    // Note: fullSystemPrompt already contains tool descriptions and feature prompts
+    //       from buildStableContext, so we don't pass them again to avoid duplication.
     const initialMessages = new ContextBuilder({
       systemPrompt: fullSystemPrompt,
-      featurePrompts: this.featurePrompts,
-      toolDescriptions: toolDescs,
+      featurePrompts: [],
+      toolDescriptions: [],
       userMessage: input,
     }).build();
 
@@ -375,9 +376,10 @@ export class Agent {
         logger.warn('[Agent] beforeLLMCall hook error:', err as Error);
       });
 
-      logger.debug(`LLM Call, Iteration ${executionContext.turnCount}`, {
-        messages: allMessages.map(m => ({ role: m.role, content: m.content })),
-      });
+      logger.debug(
+        `LLM Call, Iteration ${executionContext.turnCount} (${allMessages.length} messages)\n` +
+        allMessages.map(m => `role: ${m.role}\ncontent: ${m.content || ''}`).join('\n\n')
+      );
 
       // ===== Call LLM =====
       const llmStart = Date.now();
@@ -547,7 +549,7 @@ export class Agent {
     const taskId = `task-${Date.now()}`;
     const startTime = Date.now();
 
-    logger.info(`Executing task: ${task}`);
+    logger.info(`Executing task:\n${task}`);
 
     try {
       // ===== Hook: beforeExecute =====
