@@ -378,7 +378,12 @@ export class Agent {
 
       logger.debug(
         `LLM Call, Iteration ${executionContext.turnCount} (${allMessages.length} messages)\n` +
-        allMessages.map(m => `role: ${m.role}\ncontent: ${m.content || ''}`).join('\n\n')
+        allMessages.map(m =>
+          `role: ${m.role}` +
+          `\ncontent: ${m.content || ''}` +
+          (m.tool_calls ? `\ntool_calls: ${JSON.stringify(m.tool_calls)}` : '') +
+          (m.tool_call_id ? `\ntool_call_id: ${m.tool_call_id}` : '')
+        ).join('\n\n')
       );
 
       // ===== Call LLM =====
@@ -413,6 +418,7 @@ export class Agent {
 
       if (response.toolCalls && response.toolCalls.length > 0) {
         // Record assistant message with tool calls
+        logger.debug(`toolCalls: ${JSON.stringify(response.toolCalls)}`)
         history.push({
           role: 'assistant',
           content: response.content || '',

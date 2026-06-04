@@ -1,0 +1,15 @@
+{
+  "name": "@miniclaw/duckduckgo-search",
+  "version": "1.0.0",
+  "description": "DuckDuckGo web search plugin for miniclaw",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}

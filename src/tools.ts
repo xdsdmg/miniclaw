@@ -319,10 +319,22 @@ export class ToolExecutor {
   // ── Web ──────────────────────────────────────────────────────────
 
   /**
-   * Search the web (placeholder — needs API configuration)
+   * Search the web via DuckDuckGo Search plugin
+   * Lazily loads the plugin — returns install instructions if not available
    */
   async executeWebSearch(query: string): Promise<string> {
-    return `Web search is not yet configured. To enable it, set up a search API (e.g., SerpAPI, Bing Search API).\nQuery: ${query}`;
+    try {
+      const { DuckDuckGoSearchProvider, formatSearchResults } =
+        require('../plugins/duckduckgo-search/src/index');
+      const provider = new DuckDuckGoSearchProvider();
+      const results = await provider.search(query);
+      return formatSearchResults(results);
+    } catch (error: any) {
+      if (error?.code === 'MODULE_NOT_FOUND' || error?.code === 'ENOENT') {
+        return `Web search is not configured. Install the duckduckgo-search plugin:\n  cd plugins/duckduckgo-search && pip install -r requirements.txt`;
+      }
+      return `Error: Web search failed - ${error.message}`;
+    }
   }
 
   /**

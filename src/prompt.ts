@@ -17,6 +17,10 @@ import { tools } from './tools-schema';
  * Compatible with OpenAI Chat Completions API
  */
 export interface ChatMessage {
+  // system: Instructions that define the AI's identity, behavior rules, and available tool descriptions; typically placed at the start of a conversation
+  // user: A message from the user, containing questions or instructions
+  // assistant: A response from the AI, containing text content or tool call requests
+  // tool: The result of a tool execution, fed back to the AI so it can continue reasoning
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   /** Required when role is 'tool' */
