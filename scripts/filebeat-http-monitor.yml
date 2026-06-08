@@ -1,0 +1,52 @@
+# Filebeat 配置示例 - HTTP 流量监控日志采集
+#
+# 使用方式:
+#   1. 将此配置片段合并到 filebeat.yml，或放入 filebeat 的 inputs.d 目录
+#   2. 调整 paths 为实际的日志文件路径
+#   3. 重启 filebeat: sudo systemctl restart filebeat
+
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/http_monitor.json
+    # JSON lines 格式，自动解析每个字段到根级别
+    json.keys_under_root: true
+    json.add_error_key: true
+    # 如果解析失败，保留原始行
+    json.message_key: "message"
+
+    # 自定义字段（可选）
+    fields:
+      log_type: http_monitor
+      monitor_port: "3000"
+    fields_under_root: true
+
+    # 多行处理（本项目每条日志都是单行 JSON，无需多行合并）
+    # multiline.type: pattern
+    # multiline.pattern: '^{'
+    # multiline.negate: true
+    # multiline.match: after
+
+# Elasticsearch 输出配置
+output.elasticsearch:
+  hosts: ["http://localhost:9200"]
+  # 索引名称模板（按日期滚动）
+  index: "http-monitor-%{+yyyy.MM.dd}"
+
+# 索引模板（可选，确保字段类型正确）
+setup.template.name: "http-monitor"
+setup.template.pattern: "http-monitor-*"
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+  index.mapper.dynamic: true
+
+# ILM 生命周期管理（可选）
+setup.ilm.enabled: true
+setup.ilm.rollover: "100mb"
+setup.ilm.pattern: "{now/d}-000001"
+
+# Kibana 连接（如果需要自动创建 dashboard）
+# setup.kibana:
+#   host: "http://localhost:5601"

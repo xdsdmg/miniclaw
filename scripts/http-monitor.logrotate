@@ -1,0 +1,12 @@
+/var/log/http_monitor.json {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    postrotate
+        # tcpdump 追加模式写入，rotate 后无需 reload
+    endscript
+}

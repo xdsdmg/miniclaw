@@ -9,3 +9,5 @@ test.sh
 logs
 data
 .miniclaw
+__pycache__
+*.swp
