@@ -2,6 +2,13 @@ import { HookManager, HOOKS } from '../core/hooks';
 import { MemoryManager } from './manager';
 import { SessionManager } from './session-manager';
 import { logger } from '../logger';
+import { SkillLoader } from '../learning/skills';
+import { LearningTriggers, LearningContext } from '../learning/triggers';
+import { KnowledgeExtractor, ExtractionContext } from '../learning/extractor';
+import { ContextCompressor } from '../learning/compression';
+import { LearningStorage } from '../learning/storage';
+import { LLMProvider } from '../llm';
+import { MemoryStorage } from './storage';
 import type {
   BeforeExecuteContext,
   AfterStableContextContext,
@@ -19,12 +26,38 @@ import type {
  *
  * Integrates Memory System with miniclaw through Hook Manager.
  * Uses Mode B: Hooks can modify context (add session history, search results, etc.)
+ *
+ * Phase 7 Week 4: Integration with Learning Loop
+ * - Load relevant skills in afterDynamicContext
+ * - Check learning triggers in afterExecute
+ * - Compress context before LLM call if needed
  */
 export class MemoryHooks {
+  private skillLoader?: SkillLoader;
+  private learningTriggers?: LearningTriggers;
+  private knowledgeExtractor?: KnowledgeExtractor;
+  private contextCompressor?: ContextCompressor;
+
   constructor(
     private memoryManager: MemoryManager,
-    private sessionManager: SessionManager
-  ) { }
+    private sessionManager: SessionManager,
+    learningStorage?: LearningStorage,
+    llmProvider?: LLMProvider,
+    memoryStorage?: MemoryStorage
+  ) {
+    // Initialize learning components if storage is provided
+    if (learningStorage) {
+      this.skillLoader = new SkillLoader(learningStorage);
+      this.learningTriggers = new LearningTriggers();
+
+      // KnowledgeExtractor requires LLMProvider and MemoryStorage
+      if (llmProvider && memoryStorage) {
+        this.knowledgeExtractor = new KnowledgeExtractor(llmProvider, memoryStorage);
+      }
+
+      this.contextCompressor = new ContextCompressor();
+    }
+  }
 
   // ========================================================================
   // Hook Handlers
@@ -94,8 +127,15 @@ export class MemoryHooks {
       logger.debug(`[MemoryHooks] Added ${searchResults.length} search results to context`);
     }
 
-    // Note: loadRelevantSkills is not implemented in Phase 3.5
-    // This will be added in a future phase
+    // Load relevant skills (Phase 7 Week 4)
+    if (this.skillLoader && context.userId) {
+      const skills = this.skillLoader.loadRelevantSkills(context.task, context.userId, 3);
+      if (skills.length > 0) {
+        const formattedSkills = this.skillLoader.formatSkillsForContext(skills);
+        context.context += '\n' + formattedSkills;
+        logger.debug(`[MemoryHooks] Added ${skills.length} relevant skills to context`);
+      }
+    }
   }
 
   /**
@@ -106,10 +146,31 @@ export class MemoryHooks {
 
     logger.debug(`[MemoryHooks] beforeLLMCall: Conversation ${context.conversationId}, Model ${context.model}, ~${context.estimatedTokens} tokens`);
 
-    // Preflight compression check
-    if (context.estimatedTokens > 4000) {  // 80% of 5K limit
-      logger.warn(`[MemoryHooks] Approaching token limit: ${context.estimatedTokens} tokens`);
-      // Could trigger compression here
+    // Preflight compression check (Phase 7 Week 4)
+    if (this.contextCompressor && context.estimatedTokens > 4000) {  // 80% of 5K limit
+      logger.warn(`[MemoryHooks] Approaching token limit: ${context.estimatedTokens} tokens, triggering compression`);
+
+      // Compress the context to reduce tokens
+      try {
+        const result = await this.contextCompressor.compress(context.context, {
+          maxTokens: 3000,
+          preserveSections: {
+            currentTask: true,
+            lastAssistantResponses: 2,
+            minSkillSuccessRate: 0.7,
+            toolResults: false,
+          },
+          compressionRatio: 0.5,
+        });
+
+        logger.info(`[MemoryHooks] Context compressed: ${result.originalTokens} -> ${result.compressedTokens} tokens`);
+
+        // Update context with compressed version
+        // Note: This would require modifying the context object structure
+        // For now, we just log the compression result
+      } catch (error) {
+        logger.error(`[MemoryHooks] Compression failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   }
 
@@ -183,19 +244,53 @@ export class MemoryHooks {
       logger.debug(`[MemoryHooks] Added user message to session for user ${context.userId}`);
     }
 
-    // Check learning triggers
-    const agentContext = {
-      conversationId: context.conversationId,
-      turnCount: context.turnCount,
-      toolCallCount: context.toolCallCount,
-      hadErrors: !context.success,
-      recovered: context.success,
-      userCorrection: false
-    };
+    // Check learning triggers (Phase 7 Week 4)
+    if (this.learningTriggers && this.knowledgeExtractor && context.conversationId) {
+      const learningContext: LearningContext = {
+        conversationId: context.conversationId,
+        userId: context.userId || 'unknown',
+        task: context.task,
+        result: context.success ? 'Task completed successfully' : 'Task failed',
+        turnCount: context.turnCount,
+        toolCallCount: context.toolCallCount,
+        hadErrors: !context.success,
+        recovered: context.success && (context as any).hadError,
+        duration: context.duration,
+      };
 
-    // Note: checkLearningTrigger is not implemented in Phase 3.5
-    // This will be added in a future phase (Learning Loop)
-    // this.memoryManager.checkLearningTrigger(agentContext);
+      const triggerResult = this.learningTriggers.evaluate(learningContext);
+
+      if (triggerResult.shouldLearn) {
+        logger.info(`[MemoryHooks] Learning triggered: ${triggerResult.quality} quality, score: ${triggerResult.score}`);
+
+        // Extract knowledge from this conversation
+        try {
+          // Convert LearningContext to ExtractionContext
+          const extractionContext: ExtractionContext = {
+            conversationId: learningContext.conversationId,
+            userId: learningContext.userId,
+            task: learningContext.task,
+            result: learningContext.result,
+            turnCount: learningContext.turnCount,
+            success: !learningContext.hadErrors || learningContext.recovered,
+          };
+
+          const knowledgeItems = await this.knowledgeExtractor.extract(extractionContext);
+
+          if (knowledgeItems && knowledgeItems.length > 0) {
+            for (const knowledge of knowledgeItems) {
+              logger.info(`[MemoryHooks] Extracted ${knowledge.type}: "${knowledge.title}" (confidence: ${knowledge.confidence})`);
+            }
+
+            // Knowledge is automatically saved by KnowledgeExtractor
+          }
+        } catch (error) {
+          logger.error(`[MemoryHooks] Knowledge extraction failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      } else {
+        logger.debug(`[MemoryHooks] Learning not triggered: score ${triggerResult.score} below threshold`);
+      }
+    }
 
     // End conversation
     if (context.conversationId) {

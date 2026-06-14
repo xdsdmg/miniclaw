@@ -1,6 +1,5 @@
 node_modules
 dist
-*.js
 !dist/*.js
 *.js.map
 *.d.ts
