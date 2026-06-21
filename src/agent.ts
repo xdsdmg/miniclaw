@@ -117,7 +117,7 @@ type ProgressCallback = (event: ProgressEvent) => void;
  * Maximum iterations
  * Prevents infinite loops, controls the number of interaction rounds between agent and LLM
  */
-const MAX_ITERATIONS = 10;
+const MAX_ITERATIONS = 50;
 
 /**
  * Execution Context

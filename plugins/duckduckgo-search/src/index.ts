@@ -72,7 +72,7 @@ export class DuckDuckGoSearchProvider {
     this.pythonBin = config?.pythonBin ||
       path.resolve(__dirname, '..', '.venv', 'bin', 'python3');
 
-    this.maxResults = config?.maxResults || 5;
+    this.maxResults = config?.maxResults || 20;
     this.timeout = config?.timeout || 60000;
   }
 
