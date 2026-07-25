@@ -134,7 +134,7 @@ export class LLMProvider {
   private getModelName(): string {
     switch (this.config.provider.toLowerCase()) {
       case 'deepseek':
-        return process.env.DEEPSEEK_MODEL || 'deepseek-chat';
+        return process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
       case 'kimi':
         return process.env.KIMI_MODEL || 'moonshot-v1-8k';
       case 'qwen':

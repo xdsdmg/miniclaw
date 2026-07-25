@@ -72,6 +72,99 @@ graph TB
 
 ---
 
+### 1.1 Context Builder 与 MemoryHooks 协作关系
+
+#### 角色定位
+
+| 维度 | Context Builder (`prompt.ts`) | MemoryHooks (`memory/hooks.ts`) |
+|------|-------------------------------|-------------------------------|
+| 角色 | **静态组装器** | **动态注入器** |
+| 职责 | 将 system prompt + feature prompts + tool descriptions + history + user message 拼成 `ChatMessage[]` | 在 Agent 执行关键节点向上下文追加记忆数据（session history、FTS5 搜索结果、技能） |
+| 状态 | 纯函数式，无状态 | 有状态（持有 MemoryManager、SessionManager 引用） |
+| 是否感知对方 | ❌ 完全不感知 | ❌ 完全不感知 |
+
+**两者之间没有直接依赖。** ContextBuilder 不知道 MemoryHooks 的存在，MemoryHooks 也不调用 ContextBuilder。所有交互通过 **Agent 编排 + HookManager 调度** 完成，遵循装饰器模式 + 管道模式。
+
+#### 三阶段协作流程
+
+```
+第一阶段：构建 Stable Context（缓存优化的不变部分）
+─────────────────────────────────────────────────────
+  Agent.buildStableContext()                           [agent.ts:280]
+    └─ new ContextBuilder({
+         systemPrompt,         // Layer 0: 狭义 system prompt
+         featurePrompts,       // Layer 1: 功能提示
+         toolDescriptions,     // Layer 2: 工具描述
+         userMessage: '',      // 故意传空——本阶段只关心 system prompt
+       }).build()
+         └─ buildSystemPrompt() → 合并 Layer 0+1+2 的字符串
+
+  ──→ [Hook] afterStableContext                        [agent.ts:574-586]
+    └─ MemoryHooks.onAfterStableContext()               [memory/hooks.ts:89]
+         └─ context.context += session history（最近5条）→ Layer 3
+
+  结果: enhancedStableContext = Layer 0+1+2+3 合并字符串
+
+第二阶段：构建 Dynamic Context（每次任务可变的动态部分）
+─────────────────────────────────────────────────────
+  Agent.buildDynamicContext()                           [agent.ts:302]
+    └─ 返回空字符串（占位，自身不做任何事）
+
+  ──→ [Hook] afterDynamicContext                        [agent.ts:594-608]
+    └─ MemoryHooks.onAfterDynamicContext()               [memory/hooks.ts:113]
+         ├─ FTS5 搜索相关历史 → Layer 4a
+         └─ SkillLoader 加载相关技能 → Layer 4b
+
+  结果: enhancedDynamicContext = Layer 4a+4b 合并字符串
+
+第三阶段：组装最终消息（进入 runLoop）
+─────────────────────────────────────────────────────
+  Agent.runLoop()                                       [agent.ts:324]
+    └─ fullSystemPrompt = enhancedStableContext + enhancedDynamicContext
+    └─ new ContextBuilder({
+         systemPrompt: fullSystemPrompt,  // 此时已是所有层的合并体
+         featurePrompts: [],              // ▲ 显式清空——已包含在 fullSystemPrompt 中
+         toolDescriptions: [],            // ▲ 显式清空——同上
+         userMessage: input,              // ★ 用户输入在此处首次传入
+       }).build()
+         → prefixMessages = [{ role: 'system', content: fullSystemPrompt }]
+         → history = [{ role: 'user', content: input }]
+    └─ allMessages = [...prefixMessages, ...history]
+         → 最终发往 LLM 的 messages 数组
+```
+
+**关键结论：用户输入既不参与 stable context 的构建，也不参与 dynamic context 的构建。** 它只在 `runLoop` 开始前被包装成一条 `{ role: 'user' }` 消息，作为对话的第一条历史。这种两阶段设计让 system prompt 的缓存（OpenAI prefix caching）不会因为用户输入变化而失效。
+
+#### 增强层完整结构
+
+```
+                    .──────────────────────────────────.
+                    │       最终 system prompt           │
+                    ├──────────────────────────────────┤
+         ┌─────────▶│ Layer 0: 狭义 system prompt       │
+         │          │   (DEFAULT_SYSTEM_PROMPT)         │
+         │  Context ├──────────────────────────────────┤
+         │  Builder │ Layer 1: 功能提示 (featurePrompts) │
+         │  组装    ├──────────────────────────────────┤
+         │          │ Layer 2: 工具描述                  │
+         ├─────────▶├──────────────────────────────────┤
+         │          │ Layer 3: 会话历史                  │
+         │  Memory  │   (SessionManager 最近5条)         │
+         │  Hooks   ├──────────────────────────────────┤
+         │  注入    │ Layer 4a: FTS5 搜索结果            │
+         │          │ Layer 4b: 相关技能                │
+         └─────────▶└──────────────────────────────────┘
+```
+
+#### 设计意图
+
+- **ContextBuilder** 负责"怎么拼"——格式与顺序，保持纯净可测试
+- **MemoryHooks** 负责"拼什么"——内容来源，注入记忆数据
+- **Agent** 负责"何时触发"——编排构建流程
+- 这种分层使得记忆系统可独立演进、Prompt 构建逻辑可单独测试、执行流程清晰可追踪
+
+---
+
 ## 2. Prompt 设计分析
 
 ### 2.1 Prompt 构建流程

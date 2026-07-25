@@ -75,23 +75,37 @@ if (missingConfig.length > 0) {
   process.exit(1);
 }
 
+// ========================================================================
+// Unhandled Rejection Handler
+// Prevents process crash on unhandled Promise rejections (Node.js 15+)
+// ========================================================================
+process.on('unhandledRejection', (reason) => {
+  console.error(`[Feishu Bot] Unhandled rejection:`, reason instanceof Error ? reason.stack : reason);
+});
+
 const feishuClient = new FeishuClient(config);
 const miniclaw = new MiniclawClient(config);
 
 /**
  * Event Dispatcher
  * Register message receive event handling logic
- * 
+ *
  * Processing Flow:
  *   1. Parse received message content
  *   2. Extract sender ID
  *   3. Call Miniclaw service to process task
  *   4. Send result back to Feishu user
  */
+
+// Track last message time for connection health monitoring
+let lastMessageTime = Date.now();
+
 const eventDispatcher = new lark.EventDispatcher({}).register({
   'im.message.receive_v1': async (data: any) => {
     const message = data.message;
     const msgType = message.message_type;
+
+    lastMessageTime = Date.now();
 
     let userMessage = '';
     let senderId = '';
@@ -101,12 +115,28 @@ const eventDispatcher = new lark.EventDispatcher({}).register({
       userMessage = content.text || '';
     }
 
+    // Handle rich text (post) messages — extract plain text content
+    if (msgType === 'post' && !userMessage) {
+      try {
+        const content = JSON.parse(message.content);
+        // post content structure: { zh_cn: [[{ tag: "text", text: "..." }]] }
+        const postContent = content?.zh_cn || content?.content;
+        if (postContent && Array.isArray(postContent)) {
+          userMessage = postContent
+            .flatMap(para => Array.isArray(para) ? para.map(seg => seg.text || '') : [])
+            .join('\n');
+        }
+      } catch {
+        // fall through
+      }
+    }
+
     if (data.sender?.sender_id) {
       senderId = data.sender.sender_id.open_id;
     }
 
     if (!userMessage || !senderId) {
-      console.log('[Feishu Bot] No message content or sender ID');
+      console.log(`[Feishu Bot] No message content or sender ID (msgType=${msgType}, hasContent=${!!message?.content}, hasSender=${!!data.sender?.sender_id})`);
       return;
     }
 
@@ -148,6 +178,30 @@ wsClient
   .catch((error: any) => {
     console.error('[Feishu Bot] WebSocket error:', error);
   });
+
+// ========================================================================
+// Connection Health Monitor
+// Periodically logs WebSocket connection state and last message time.
+// Helps diagnose silent connection drops without pong timeout detection.
+// ========================================================================
+setInterval(() => {
+  const wsInstance = (wsClient as any).wsConfig?.getWSInstance?.();
+  const readyState = wsInstance?.readyState;
+  const readyStateLabel: Record<number, string> = {
+    0: 'CONNECTING',
+    1: 'OPEN',
+    2: 'CLOSING',
+    3: 'CLOSED',
+  };
+  const reconnectInfo = (wsClient as any).getReconnectInfo?.();
+  const idleSeconds = Math.round((Date.now() - lastMessageTime) / 1000);
+
+  console.log(`[Feishu Bot] Health:
+  readyState: ${readyStateLabel[readyState] ?? 'unknown'} (${readyState})
+  lastMessage: ${idleSeconds}s ago
+  lastConnectTime: ${reconnectInfo?.lastConnectTime ? new Date(reconnectInfo.lastConnectTime).toISOString() : 'N/A'}
+  nextConnectTime: ${reconnectInfo?.nextConnectTime ? new Date(reconnectInfo.nextConnectTime).toISOString() : 'N/A'}`);
+}, 60_000);
 
 process.on('SIGINT', () => {
   console.log('\n[Feishu Bot] Shutting down...');
