@@ -158,7 +158,7 @@ export function createServer(config: ServerConfig) {
    * GET /health - Health check endpoint
    * Returns current server status including running tasks and max concurrent
    */
-  app.get('/health', (res: Response) => {
+  app.get('/health', (_req: Request, res: Response) => {
     const status = concurrencyManager.getStatus();
     res.json({
       status: 'ok',

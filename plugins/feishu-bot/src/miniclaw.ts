@@ -65,6 +65,7 @@ export class MiniclawClient {
         body: JSON.stringify({
           task,
           userId,
+          timeout: this.config.timeout, // override server-side defaultTimeout
         }),
         signal: controller.signal,
       });
@@ -109,9 +110,13 @@ export class MiniclawClient {
       return;
     }
 
+    // Pass the client timeout to the server so long tasks aren't cut off by the
+    // server's default 120s Promise.race (see src/server.ts /execute/stream).
+    const timeout = this.config.timeout || 600000;
     const params = new URLSearchParams({
       task,
       userId: userId || '', // Add userId to query parameters
+      timeout: String(timeout),
     });
 
     try {
@@ -155,7 +160,15 @@ export class MiniclawClient {
               } else if (data.stage === 'tool_result') {
                 yield `📋 Tool result: ${data.toolResult?.substring(0, 100)}...\n`;
               } else if (data.stage === 'completed') {
-                yield `✅ ${data.message}\n`;
+                // progress complete — final answer arrives via the `result` event
+                continue;
+              } else if (data.success !== undefined) {
+                // Final `result` event: { success, result, error, executionTime }
+                if (data.success) {
+                  yield `RESULT:${data.result || 'Task completed.'}`;
+                } else {
+                  yield `ERROR:${data.error || 'Unknown error'}`;
+                }
               }
             } catch {
               // Skip invalid JSON

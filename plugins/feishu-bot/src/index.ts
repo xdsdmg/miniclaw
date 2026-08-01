@@ -46,7 +46,9 @@ program
   .option('--app-id <id>', 'Feishu App ID')
   .option('--app-secret <secret>', 'Feishu App Secret')
   .option('--server-url <url>', 'Miniclaw server URL (default: http://localhost:3000)')
-  .option('--server-api-key <key>', 'Miniclaw server API key');
+  .option('--server-api-key <key>', 'Miniclaw server API key')
+  .option('--timeout <ms>', 'Task timeout in milliseconds (default: 600000)')
+  .option('--plain-text', 'Send final replies as plain text instead of Markdown cards');
 
 const options = program.parse(process.argv).opts();
 const config: BotConfig = {
@@ -55,6 +57,8 @@ const config: BotConfig = {
   port: 0,
   serverURL: options.serverUrl || 'http://localhost:3000',
   serverApiKey: options.serverApiKey || process.env.MINICLAW_API_KEY,
+  timeout: options.timeout ? parseInt(options.timeout) : 600000,
+  useMarkdown: !options.plainText,
 };
 
 // Validate required configuration
@@ -144,9 +148,35 @@ const eventDispatcher = new lark.EventDispatcher({}).register({
 
     setImmediate(async () => {
       try {
-        const result = await miniclaw.execute(userMessage, senderId);
-        const responseText = result || 'Task completed.';
-        await feishuClient.sendMessage('open_id', senderId, responseText);
+        // Acknowledge receipt immediately so the user isn't left waiting
+        await feishuClient.sendMessage('open_id', senderId, '⏳ 已收到，正在处理...');
+
+        let finalResult = '';
+        const sentProgress = new Set<string>();
+
+        for await (const chunk of miniclaw.executeStream(userMessage, senderId)) {
+          if (chunk.startsWith('RESULT:')) {
+            finalResult = chunk.substring(7).trim();
+          } else if (chunk.startsWith('ERROR:')) {
+            finalResult = chunk.substring(6).trim();
+          } else if (chunk.startsWith('⚙️')) {
+            // Push real-time tool-execution progress (deduplicated by tool name)
+            const toolLine = chunk.trim();
+            const toolName = toolLine.replace('⚙️ Executing ', '').replace(/[:：].*$/, '').trim();
+            if (!sentProgress.has(toolName)) {
+              sentProgress.add(toolName);
+              await feishuClient.sendMessage('open_id', senderId, toolLine);
+            }
+          }
+          // thinking / tool_result progress is skipped to avoid message spam
+        }
+
+        const responseText = finalResult || 'Task completed.';
+        if (config.useMarkdown !== false) {
+          await feishuClient.sendMarkdownMessage('open_id', senderId, responseText);
+        } else {
+          await feishuClient.sendMessage('open_id', senderId, responseText);
+        }
         console.log('[Feishu Bot] Sent response to user');
       } catch (error) {
         console.error('[Feishu Bot] Error:', error);

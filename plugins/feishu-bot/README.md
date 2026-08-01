@@ -120,6 +120,8 @@ npm start -- --app-secret your-feishu-app-secret
 | `--app-secret` | Feishu App Secret | `LARK_APP_SECRET` env var |
 | `--server-url` | Miniclaw server URL | `http://localhost:3000` |
 | `--server-api-key` | Miniclaw server API key | `MINICLAW_API_KEY` env var |
+| `--timeout` | Task timeout in milliseconds (passed to the Miniclaw server) | `600000` (10 min) |
+| `--plain-text` | Send final replies as plain text instead of Markdown cards | Markdown on |
 
 **Note**: Required configuration can be provided via CLI arguments or environment variables. The bot will validate all required parameters on startup and provide helpful error messages.
 
@@ -156,3 +158,14 @@ Example error output:
 3. Add the bot to Feishu and start a direct message conversation
 4. Send a text message to the bot
 5. Bot executes the task via miniclaw server and returns the result
+
+## Behavior
+
+- **Streaming**: The bot uses the server's SSE streaming endpoint (`/execute/stream`).
+  It immediately replies "⏳ 已收到，正在处理..." and pushes real-time tool progress
+  (e.g. "⚙️ Executing file_read") as the task runs, so long tasks don't appear stuck.
+- **Timeout**: The configured `--timeout` (default 10 min) is forwarded to the server
+  via the streaming `timeout` query param, overriding the server's default 2-minute limit.
+- **Markdown**: The final answer is rendered as a Feishu interactive card with a
+  `markdown` element (headings, bold/italic, links, inline & fenced code, lists).
+  Pass `--plain-text` to send plain text replies instead.

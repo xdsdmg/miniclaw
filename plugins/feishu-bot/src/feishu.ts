@@ -31,7 +31,7 @@ export class FeishuClient {
   /**
    * Send Message
    * Send text message to specified user via Feishu IM API
-   * 
+   *
    * @param receiveIdType Receiver ID type (open_id | user_id | union_id)
    * @param receiveId     Receiver ID
    * @param content       Message content (text)
@@ -49,6 +49,57 @@ export class FeishuClient {
         receive_id: receiveId,
         msg_type: 'text',
         content: JSON.stringify({ text: content }),
+      },
+    });
+  }
+
+  /** Maximum markdown length per card (Feishu card content limits) */
+  private static readonly MARKDOWN_MAX_LEN = 20000;
+
+  /**
+   * Send Markdown Message (interactive card)
+   * Renders markdown in a Feishu interactive card for a richer visual experience.
+   * Supports: headings, bold/italic, links, inline code, fenced code blocks, lists.
+   *
+   * Falls back to plain text if the content is empty or non-renderable.
+   *
+   * @param receiveIdType Receiver ID type (open_id | user_id | union_id)
+   * @param receiveId     Receiver ID
+   * @param content       Markdown content
+   */
+  async sendMarkdownMessage(
+    receiveIdType: 'open_id' | 'user_id' | 'union_id',
+    receiveId: string,
+    content: string
+  ): Promise<void> {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      await this.sendMessage(receiveIdType, receiveId, content);
+      return;
+    }
+
+    // Truncate very long content to avoid exceeding card size limits
+    const body = trimmed.length > FeishuClient.MARKDOWN_MAX_LEN
+      ? trimmed.slice(0, FeishuClient.MARKDOWN_MAX_LEN) + '\n\n…（内容过长已截断）'
+      : trimmed;
+
+    // NOTE: No escaping of `{{ }}` — for a standalone card sent via the message
+    // API (no template binding), curly braces are literal text. Escaping would
+    // corrupt legitimate content like template literals in code blocks.
+    const card = {
+      elements: [
+        { tag: 'markdown', content: body },
+      ],
+    };
+
+    await this.client.im.v1.message.create({
+      params: {
+        receive_id_type: receiveIdType,
+      },
+      data: {
+        receive_id: receiveId,
+        msg_type: 'interactive',
+        content: JSON.stringify(card),
       },
     });
   }

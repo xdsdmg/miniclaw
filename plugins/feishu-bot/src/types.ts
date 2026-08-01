@@ -23,6 +23,17 @@ export interface BotConfig {
   serverURL?: string;
   /** Miniclaw server authentication key */
   serverApiKey?: string;
+  /**
+   * Task timeout in milliseconds. Passed to the Miniclaw server via the
+   * streaming endpoint's `timeout` query param, so long tasks aren't cut off.
+   * Default: 600000 (10 minutes).
+   */
+  timeout?: number;
+  /**
+   * Whether to render final replies as Feishu interactive cards with Markdown.
+   * Default: true. Set false for plain-text replies only.
+   */
+  useMarkdown?: boolean;
 }
 
 /**
