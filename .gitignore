@@ -10,3 +10,7 @@ data
 .miniclaw
 __pycache__
 *.swp
+# Test artifacts
+test-memories/
+test-*.db-shm
+test-*.db-wal

@@ -16,6 +16,9 @@
 import { Command } from 'commander';
 import { Agent } from './agent';
 import { startServer } from './server';
+import { getDefaultProvider } from './llm/config';
+import { listConfiguredProviders, getApiKeyEnvVars } from './llm/env-api-keys';
+import { getGlobalModels } from './llm/registry';
 
 /**
  * CLI program main object
@@ -27,7 +30,8 @@ program
   .name('miniclaw')
   .description('A minimal AI agent that orchestrates LLMs and tools to complete tasks')
   .version('1.0.0')
-  .enablePositionalOptions();
+  .enablePositionalOptions()
+  .option('--config <path>', 'Path to a miniclaw.json config file (auto-discovered if omitted)');
 
 /**
 * Execute subcommand
@@ -42,7 +46,7 @@ program
   .command('execute')
   .description('Execute a task directly')
   .argument('<task>', 'The task for the AI agent to complete')
-  .option('-p, --provider <provider>', 'LLM provider (deepseek, kimi, qwen, openai)', 'openai')
+  .option('-p, --provider <provider>', 'LLM provider (deepseek, ...)', getDefaultProvider())
   .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
   .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
   .action(async (task: string, options: any) => {
@@ -60,10 +64,43 @@ program
       });
 
       await agent.execute(task);
+      // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
+      process.exit(0);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
+  });
+
+/**
+ * Providers subcommand
+ * List available LLM providers and their configuration status
+ */
+program
+  .command('providers')
+  .description('List available LLM providers and their configuration status')
+  .action(() => {
+    const configured = listConfiguredProviders();
+    console.log('Configured providers (have API key):');
+    if (configured.length === 0) {
+      console.log('  (none)');
+    } else {
+      for (const id of configured) {
+        console.log(`  - ${id} (${getApiKeyEnvVars(id).filter((v) => process.env[v]).join(', ')})`);
+      }
+    }
+    console.log('\nRegistered providers:');
+    const models = getGlobalModels();
+    const providers = models.getProviders();
+    if (providers.length === 0) {
+      console.log('  (none loaded — providers register on first use)');
+    } else {
+      for (const p of providers) {
+        const modelsList = p.getModels().map((m) => m.id).join(', ');
+        console.log(`  - ${p.id}: ${p.getModels().length} model(s) [${modelsList}]`);
+      }
+    }
+    console.log(`\nDefault provider: ${getDefaultProvider()}`);
   });
 
 /**
@@ -92,7 +129,7 @@ program
   .option('-k, --api-key <key>', 'API key for authentication (required)')
   .option('-t, --timeout <ms>', 'Default timeout in milliseconds', '120000')
   .option('-c, --max-concurrent <n>', 'Maximum concurrent tasks', '5')
-  .option('--provider <provider>', 'Default LLM provider', 'openai')
+  .option('--provider <provider>', 'Default LLM provider', getDefaultProvider())
   .option('--llm-api-key <key>', 'Default LLM API key')
   .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
   .action(async (options: any) => {
@@ -126,7 +163,7 @@ program
  */
 program
   .argument('<task>', 'The task for the AI agent to complete')
-  .option('-p, --provider <provider>', 'LLM provider (deepseek, kimi, qwen, openai)', 'openai')
+  .option('-p, --provider <provider>', 'LLM provider (deepseek, ...)', getDefaultProvider())
   .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
   .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
   .action(async (task: string, options: any) => {
@@ -144,6 +181,8 @@ program
       });
 
       await agent.execute(task);
+      // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
+      process.exit(0);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

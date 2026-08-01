@@ -1,0 +1,21 @@
+{
+  "//": "Miniclaw LLM configuration. Copy to miniclaw.json to use. Loaded automatically from cwd, or via --config <path>.",
+  "defaultProvider": "deepseek",
+  "providers": {
+    "deepseek": {
+      "apiKey": "sk-xxxxxxxx",
+      "baseURL": "https://api.deepseek.com",
+      "model": "deepseek-v4-flash",
+      "temperature": 0.7
+    }
+  },
+  "customProviders": [
+    {
+      "id": "my-company",
+      "name": "My Company LLM",
+      "baseURL": "https://llm.mycompany.com/v1",
+      "apiKeyEnvVar": "MY_COMPANY_API_KEY",
+      "models": ["my-model-v1", "my-model-v2"]
+    }
+  ]
+}
