@@ -311,6 +311,15 @@ export class MemoryManager {
     return this.promptMemory;
   }
 
+  /**
+   * Get the underlying MemoryStorage instance
+   * Exposes the SQLite CRUD + FTS5 store so callers (e.g. KnowledgeExtractor)
+   * can read tool executions without opening a second DB connection.
+   */
+  getStorage(): MemoryStorage {
+    return this.storage;
+  }
+
   // ========================================================================
   // Conversation Lifecycle
   // ========================================================================

@@ -63,7 +63,8 @@ program
         baseURL: options.llmBaseUrl,
       });
 
-      await agent.execute(task);
+      // 'cli-user' is the documented default user id for CLI usage (see schema.ts)
+      await agent.execute(task, 'cli-user');
       // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
       process.exit(0);
     } catch (error) {
@@ -180,7 +181,8 @@ program
         baseURL: options.llmBaseUrl,
       });
 
-      await agent.execute(task);
+      // 'cli-user' is the documented default user id for CLI usage (see schema.ts)
+      await agent.execute(task, 'cli-user');
       // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
       process.exit(0);
     } catch (error) {

@@ -37,6 +37,7 @@ export class MemoryHooks {
   private learningTriggers?: LearningTriggers;
   private knowledgeExtractor?: KnowledgeExtractor;
   private contextCompressor?: ContextCompressor;
+  private learningStorage?: LearningStorage;
 
   constructor(
     private memoryManager: MemoryManager,
@@ -47,6 +48,7 @@ export class MemoryHooks {
   ) {
     // Initialize learning components if storage is provided
     if (learningStorage) {
+      this.learningStorage = learningStorage;
       this.skillLoader = new SkillLoader(learningStorage);
       this.learningTriggers = new LearningTriggers();
 
@@ -128,7 +130,9 @@ export class MemoryHooks {
     }
 
     // Load relevant skills (Phase 7 Week 4)
-    if (this.skillLoader && context.userId) {
+    // No userId guard: SkillLoader searches global skills when userId is undefined,
+    // so skills load even in CLI mode where no userId is supplied.
+    if (this.skillLoader) {
       const skills = this.skillLoader.loadRelevantSkills(context.task, context.userId, 3);
       if (skills.length > 0) {
         const formattedSkills = this.skillLoader.formatSkillsForContext(skills);
@@ -147,7 +151,9 @@ export class MemoryHooks {
     logger.debug(`[MemoryHooks] beforeLLMCall: Conversation ${context.conversationId}, Model ${context.model}, ~${context.estimatedTokens} tokens`);
 
     // Preflight compression check (Phase 7 Week 4)
-    if (this.contextCompressor && context.estimatedTokens > 4000) {  // 80% of 5K limit
+    // context.context guard: BeforeLLMCallContext has no `context` field, so without
+    // this check compress(undefined) would throw on every large-context call.
+    if (this.contextCompressor && context.context && context.estimatedTokens > 4000) {  // 80% of 5K limit
       logger.warn(`[MemoryHooks] Approaching token limit: ${context.estimatedTokens} tokens, triggering compression`);
 
       // Compress the context to reduce tokens
@@ -245,7 +251,9 @@ export class MemoryHooks {
     }
 
     // Check learning triggers (Phase 7 Week 4)
-    if (this.learningTriggers && this.knowledgeExtractor && context.conversationId) {
+    // Non-blocking: extraction (an extra LLM round-trip) runs fire-and-forget so it
+    // never delays the task response. Requires the skills storage to persist results.
+    if (this.learningTriggers && this.knowledgeExtractor && this.learningStorage && context.conversationId) {
       const learningContext: LearningContext = {
         conversationId: context.conversationId,
         userId: context.userId || 'unknown',
@@ -262,31 +270,9 @@ export class MemoryHooks {
 
       if (triggerResult.shouldLearn) {
         logger.info(`[MemoryHooks] Learning triggered: ${triggerResult.quality} quality, score: ${triggerResult.score}`);
-
-        // Extract knowledge from this conversation
-        try {
-          // Convert LearningContext to ExtractionContext
-          const extractionContext: ExtractionContext = {
-            conversationId: learningContext.conversationId,
-            userId: learningContext.userId,
-            task: learningContext.task,
-            result: learningContext.result,
-            turnCount: learningContext.turnCount,
-            success: !learningContext.hadErrors || learningContext.recovered,
-          };
-
-          const knowledgeItems = await this.knowledgeExtractor.extract(extractionContext);
-
-          if (knowledgeItems && knowledgeItems.length > 0) {
-            for (const knowledge of knowledgeItems) {
-              logger.info(`[MemoryHooks] Extracted ${knowledge.type}: "${knowledge.title}" (confidence: ${knowledge.confidence})`);
-            }
-
-            // Knowledge is automatically saved by KnowledgeExtractor
-          }
-        } catch (error) {
+        this.extractAndSave(learningContext).catch(error => {
           logger.error(`[MemoryHooks] Knowledge extraction failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        });
       } else {
         logger.debug(`[MemoryHooks] Learning not triggered: score ${triggerResult.score} below threshold`);
       }
@@ -295,6 +281,34 @@ export class MemoryHooks {
     // End conversation
     if (context.conversationId) {
       this.memoryManager.endConversation(context.conversationId, 'completed');
+    }
+  }
+
+  /**
+   * Extract knowledge from a conversation and persist it as a learned skill.
+   * Runs fire-and-forget (non-blocking) from onAfterExecute; errors are logged by the caller.
+   */
+  private async extractAndSave(learningContext: LearningContext): Promise<void> {
+    if (!this.knowledgeExtractor || !this.learningStorage) return;
+
+    // Convert LearningContext to ExtractionContext
+    const extractionContext: ExtractionContext = {
+      conversationId: learningContext.conversationId,
+      userId: learningContext.userId,
+      task: learningContext.task,
+      result: learningContext.result,
+      turnCount: learningContext.turnCount,
+      success: !learningContext.hadErrors || learningContext.recovered,
+    };
+
+    const knowledgeItems = await this.knowledgeExtractor.extract(extractionContext);
+
+    if (knowledgeItems && knowledgeItems.length > 0) {
+      for (const knowledge of knowledgeItems) {
+        const learnedSkill = this.knowledgeExtractor.toLearnedSkill(knowledge);
+        this.learningStorage.saveSkill(learnedSkill);
+        logger.info(`[MemoryHooks] Extracted & saved ${knowledge.type}: "${knowledge.title}" (confidence: ${knowledge.confidence})`);
+      }
     }
   }
 

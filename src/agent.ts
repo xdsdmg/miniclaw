@@ -27,10 +27,12 @@ import {
   DEFAULT_SYSTEM_PROMPT,
 } from './prompt';
 import { logger } from './logger';
-import { HookManager, HookManagerImpl, HOOKS } from './core/hooks';
+import { HookManager, HookManagerImpl, HOOKS, BeforeExecuteContext } from './core/hooks';
 import { MemoryHooks } from './memory/hooks';
 import { MemoryManager } from './memory/manager';
 import { SessionManager } from './memory/session-manager';
+import { LearningStorage } from './learning';
+import path from 'path';
 
 /**
  * Agent Configuration Interface
@@ -59,6 +61,12 @@ export interface AgentConfig {
   skillsDir?: string;
   /** Prompt memory character limit */
   promptMemoryCharLimit?: number;
+
+  // Learning Configuration (skill system)
+  /** Enable learning system (skills extraction & loading, default: true) */
+  enableLearning?: boolean;
+  /** Skills database file path (default: <skillsDir>/skills.db) */
+  skillsDbPath?: string;
 
   // Hook Configuration
   /** Optional: Use existing HookManager */
@@ -242,8 +250,20 @@ export class Agent {
       // Initialize SessionManager
       const sessionManager = new SessionManager(memoryManager);
 
-      // Create and register MemoryHooks
-      const memoryHooks = new MemoryHooks(memoryManager, sessionManager);
+      // Initialize LearningStorage (skills DB) if learning is enabled
+      const learningStorage = this.config.enableLearning !== false
+        ? new LearningStorage(this.config.skillsDbPath || path.join(skillsDir, 'skills.db'))
+        : undefined;
+
+      // Create and register MemoryHooks, injecting the learning components
+      // so SkillLoader / LearningTriggers / KnowledgeExtractor get constructed.
+      const memoryHooks = new MemoryHooks(
+        memoryManager,
+        sessionManager,
+        learningStorage,
+        this.llm,
+        memoryManager.getStorage()
+      );
       memoryHooks.registerTo(this.hookManager);
 
       logger.info('[Agent] Memory hooks registered');
@@ -323,9 +343,12 @@ export class Agent {
    */
   public async runLoop(
     input: string,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    externalContext?: ExecutionContext
   ): Promise<string> {
-    const executionContext: ExecutionContext = {
+    // When an external context is provided (from executeTaskInternal), reuse it so the
+    // caller observes the real turnCount/toolCallCount/conversationId after the loop.
+    const executionContext: ExecutionContext = externalContext || {
       turnCount: 0,
       toolCallCount: 0,
       conversationId: undefined
@@ -559,14 +582,25 @@ export class Agent {
 
     try {
       // ===== Hook: beforeExecute =====
-      await this.hookManager.executeAsync(HOOKS.BEFORE_EXECUTE, {
+      // Keep a reference to the context object so the conversationId started by
+      // MemoryHooks survives to seed runLoop (fixes NULL conversation_id rows).
+      const beforeExecuteContext: BeforeExecuteContext = {
         taskId,
         userId,
         task,
         timestamp: startTime
-      }).catch(err => {
+      };
+      await this.hookManager.executeAsync(HOOKS.BEFORE_EXECUTE, beforeExecuteContext).catch(err => {
         logger.warn('[Agent] beforeExecute hook error:', err as Error);
       });
+
+      // Execution state shared with runLoop: seeded with the conversation started by
+      // MemoryHooks, and populated with real turnCount/toolCallCount during the loop.
+      const execContext: ExecutionContext = {
+        turnCount: 0,
+        toolCallCount: 0,
+        conversationId: beforeExecuteContext.conversationId
+      };
 
       // ===== Build Stable Context =====
       const stableContext = await this.buildStableContext(task, userId);
@@ -608,19 +642,19 @@ export class Agent {
       this.enhancedDynamicContext = dynamicContextState.context;
 
       // Execute main loop
-      const result = await this.runLoop(task, onProgress);
+      const result = await this.runLoop(task, onProgress, execContext);
 
       // ===== Hook: afterExecute =====
       await this.hookManager.executeAsync(HOOKS.AFTER_EXECUTE, {
         taskId,
         userId,
-        conversationId: undefined, // Will be set by MemoryHooks if they ran
+        conversationId: execContext.conversationId,
         task,
         result,
         duration: Date.now() - startTime,
         success: true,
-        turnCount: 0, // Simplified
-        toolCallCount: 0 // Simplified
+        turnCount: execContext.turnCount,
+        toolCallCount: execContext.toolCallCount
       }).catch(err => {
         logger.warn('[Agent] afterExecute hook error:', err as Error);
       });
