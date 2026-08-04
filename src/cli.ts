@@ -6,11 +6,13 @@
  * Provides command-line interface with two running modes:
  * 1. execute command - Execute a single task directly
  * 2. server command - Start HTTP server
+ * 3. providers command - List available LLM providers and their configuration status
  * 
  * Usage:
  *   miniclaw "<task>"                    # Execute task directly
- *   miniclaw execute "<task>"           # Execute with subcommand
+ *   miniclaw execute "<task>"            # Execute with subcommand
  *   miniclaw server -k <api-key>         # Start HTTP server
+ *   miniclaw providers                   # List available LLM providers and their configuration status
  */
 
 import { Command } from 'commander';
@@ -34,44 +36,52 @@ program
   .option('--config <path>', 'Path to a miniclaw.json config file (auto-discovered if omitted)');
 
 /**
-* Execute subcommand
-* Execute AI task directly, LLM analyzes and calls tools to complete the task
-* 
-* Options:
-*   -p, --provider <provider>  LLM provider (deepseek, kimi, qwen, openai), default: openai
-*   -k, --api-key <key>        LLM API key
-*   -b, --base-url <url>       OpenAI-compatible API base URL
-*/
-program
-  .command('execute')
-  .description('Execute a task directly')
-  .argument('<task>', 'The task for the AI agent to complete')
-  .option('-p, --provider <provider>', 'LLM provider (deepseek, ...)', getDefaultProvider())
-  .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
-  .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
-  .action(async (task: string, options: any) => {
-    try {
-      const llmApiKey = options.llmApiKey || process.env.LLM_API_KEY;
-      if (!llmApiKey) {
-        console.error('Error: --llm-api-key is required (or set LLM_API_KEY environment variable)');
+ * Configure a command to run a single task with the LLM agent.
+ * Shared by the `execute` subcommand and the default command (`miniclaw "<task>"`).
+ *
+ * Options:
+ *   -p, --provider <provider>  LLM provider (deepseek, kimi, qwen, openai)
+ *   -k, --llm-api-key <key>    LLM API key
+ *   -b, --llm-base-url <url>   OpenAI-compatible API base URL
+ */
+function defineTaskRunner(command: Command): void {
+  command
+    .argument('<task>', 'The task for the AI agent to complete')
+    .option('-p, --provider <provider>', 'LLM provider (deepseek, ...)', getDefaultProvider())
+    .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
+    .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
+    .action(async (task: string, options: any) => {
+      try {
+        const llmApiKey = options.llmApiKey || process.env.LLM_API_KEY;
+        if (!llmApiKey) {
+          console.error('Error: --llm-api-key is required (or set LLM_API_KEY environment variable)');
+          process.exit(1);
+        }
+
+        const agent = new Agent({
+          provider: options.provider,
+          apiKey: llmApiKey,
+          baseURL: options.llmBaseUrl,
+        });
+
+        // 'cli-user' is the documented default user id for CLI usage (see schema.ts)
+        await agent.execute(task, 'cli-user');
+        // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
+        process.exit(0);
+      } catch (error) {
+        console.error('Error:', error instanceof Error ? error.message : String(error));
         process.exit(1);
       }
+    });
+}
 
-      const agent = new Agent({
-        provider: options.provider,
-        apiKey: llmApiKey,
-        baseURL: options.llmBaseUrl,
-      });
-
-      // 'cli-user' is the documented default user id for CLI usage (see schema.ts)
-      await agent.execute(task, 'cli-user');
-      // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
-      process.exit(0);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+/**
+ * Execute subcommand
+ * Execute AI task directly, LLM analyzes and calls tools to complete the task
+ */
+defineTaskRunner(
+  program.command('execute').description('Execute a task directly')
+);
 
 /**
  * Providers subcommand
@@ -162,33 +172,6 @@ program
  * Default command (when no subcommand)
  * Shortcut: miniclaw "<task>" is equivalent to miniclaw execute "<task>"
  */
-program
-  .argument('<task>', 'The task for the AI agent to complete')
-  .option('-p, --provider <provider>', 'LLM provider (deepseek, ...)', getDefaultProvider())
-  .option('-k, --llm-api-key <key>', 'API key for the LLM provider')
-  .option('-b, --llm-base-url <url>', 'Base URL for OpenAI-compatible APIs')
-  .action(async (task: string, options: any) => {
-    try {
-      const llmApiKey = options.llmApiKey || process.env.LLM_API_KEY;
-      if (!llmApiKey) {
-        console.error('Error: --llm-api-key is required (or set LLM_API_KEY environment variable)');
-        process.exit(1);
-      }
-
-      const agent = new Agent({
-        provider: options.provider,
-        apiKey: llmApiKey,
-        baseURL: options.llmBaseUrl,
-      });
-
-      // 'cli-user' is the documented default user id for CLI usage (see schema.ts)
-      await agent.execute(task, 'cli-user');
-      // Explicit exit: memory/SQLite handles keep the event loop alive otherwise
-      process.exit(0);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
+defineTaskRunner(program);
 
 program.parse();
