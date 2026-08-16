@@ -3,11 +3,14 @@
  *
  * Provides types and a builder for composing LLM chat messages from multiple layers:
  *   1. System prompt (general + feature prompts + tool descriptions)
- *   2. Conversation history (assistant/user/tool messages)
- *   3. Current user message
+ *   2. Stable sections (appended by afterStableContext hooks, e.g. recent session history)
+ *   3. Dynamic sections (appended by afterDynamicContext hooks, e.g. FTS5 results, skills)
+ *   4. Conversation history (assistant/user/tool messages)
  *
- * The ContextBuilder assembles these layers into a ChatMessage[] array compatible
- * with the OpenAI Chat Completions API.
+ * A `Context` object is the carrier threaded through agent execution (Go-style context):
+ * hooks and runLoop mutate it in place, and it is only materialized into a ChatMessage[]
+ * array — compatible with the OpenAI Chat Completions API — at the LLM call site, via
+ * `ContextBuilder.build()`.
  */
 
 import { tools } from './tools-schema';
@@ -30,20 +33,28 @@ export interface ChatMessage {
 }
 
 /**
- * Context Builder Configuration
- * All fields are optional except userMessage — the builder assembles only what is provided.
+ * Context — the carrier threaded through agent execution (Go-style context).
+ *
+ * Created once per task and mutated in place by hooks and runLoop:
+ * - afterStableContext  hooks push sections into `stableSections`
+ * - afterDynamicContext hooks push sections into `dynamicSections`
+ * - runLoop accumulates the conversation in `history`
+ *
+ * Only materialized into ChatMessage[] at the LLM call, via `ContextBuilder.build()`.
  */
-export interface ContextConfig {
+export interface Context {
   /** System prompt (agent identity, behavior rules) */
   systemPrompt?: string;
-  /** Feature-specific instructions, appended after system prompt */
-  featurePrompts?: string[];
-  /** Tool descriptions for inclusion in system prompt */
-  toolDescriptions?: string[];
-  /** Existing conversation history */
-  history?: ChatMessage[];
-  /** The current user message (the task) */
-  userMessage: string;
+  /** Feature-specific instructions, appended after the system prompt */
+  featurePrompts: string[];
+  /** Tool descriptions for inclusion in the system prompt */
+  toolDescriptions: string[];
+  /** Sections appended by afterStableContext hooks (e.g. recent session history) */
+  stableSections: string[];
+  /** Sections appended by afterDynamicContext hooks (e.g. FTS5 results, relevant skills) */
+  dynamicSections: string[];
+  /** Conversation messages accumulated by runLoop (user/assistant/tool) */
+  history: ChatMessage[];
 }
 
 /**
@@ -61,72 +72,56 @@ Rules:
 /**
  * Context Builder
  *
- * Assembles a complete ChatMessage[] array from composable pieces:
- *   1. System message (general prompt + feature prompts + tool descriptions)
- *   2. Conversation history (assistant/user/tool messages)
- *   3. Current user message
+ * Materializes a `Context` into a ChatMessage[] array at the LLM call site.
+ * Order: system (identity + features + tools + stable + dynamic) -> history.
  *
  * Usage:
- *   const messages = new ContextBuilder({
- *     systemPrompt: DEFAULT_SYSTEM_PROMPT,
- *     featurePrompts: ['Always respond in Chinese.'],
- *     toolDescriptions: extractToolDescriptions(tools),
- *     userMessage: 'List files in current directory',
- *   }).build();
+ *   const messages = new ContextBuilder(ctx).build();
  */
 export class ContextBuilder {
-  private config: ContextConfig;
+  constructor(private context: Context) {}
 
-  constructor(config: ContextConfig) {
-    this.config = config;
+  /**
+   * Compose the system prompt string from all layers.
+   * Sections are joined with double newlines for clear separation.
+   */
+  getSystemContent(): string {
+    const parts: string[] = [];
+
+    if (this.context.systemPrompt) {
+      parts.push(this.context.systemPrompt);
+    }
+
+    if (this.context.featurePrompts.length) {
+      parts.push(...this.context.featurePrompts);
+    }
+
+    if (this.context.toolDescriptions.length) {
+      const toolSection = 'Available tools:\n' +
+        this.context.toolDescriptions.map(d => `- ${d}`).join('\n');
+      parts.push(toolSection);
+    }
+
+    parts.push(...this.context.stableSections, ...this.context.dynamicSections);
+
+    return parts.join('\n\n');
   }
 
   /**
-   * Build the complete messages array.
-   * Order: system -> history -> user
+   * Materialize the context into ChatMessage[]: [system?, ...history].
+   * Call this only at the LLM call site.
    */
   build(): ChatMessage[] {
     const messages: ChatMessage[] = [];
 
-    // Layer 1: System prompt (composed from general + feature + tools)
-    const systemContent = this.buildSystemPrompt();
+    const systemContent = this.getSystemContent();
     if (systemContent) {
       messages.push({ role: 'system', content: systemContent });
     }
 
-    // Layer 2: Conversation history
-    if (this.config.history) {
-      messages.push(...this.config.history);
-    }
-
-    // Layer 3: Current user message
-    messages.push({ role: 'user', content: this.config.userMessage });
+    messages.push(...this.context.history);
 
     return messages;
-  }
-
-  /**
-   * Compose the system prompt from optional pieces.
-   * Pieces are joined with double newlines for clear separation.
-   */
-  private buildSystemPrompt(): string {
-    const parts: string[] = [];
-
-    if (this.config.systemPrompt) {
-      parts.push(this.config.systemPrompt);
-    }
-
-    if (this.config.featurePrompts?.length) {
-      parts.push(...this.config.featurePrompts);
-    }
-
-    if (this.config.toolDescriptions?.length) {
-      const toolSection = 'Available tools:\n' +
-        this.config.toolDescriptions.map(d => `- ${d}`).join('\n');
-      parts.push(toolSection);
-    }
-
-    return parts.join('\n\n');
   }
 }
 

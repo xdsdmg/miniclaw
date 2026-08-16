@@ -3,6 +3,20 @@ import { HookManagerImpl } from '../../src/core/hooks.js';
 import { MemoryManager } from '../../src/memory/manager.js';
 import { SessionManager } from '../../src/memory/session-manager.js';
 import fs from 'fs/promises';
+import type { Context } from '../../src/prompt.js';
+
+/** Create a base Context for hook-state tests. */
+function makeContext(overrides: Partial<Context> = {}): Context {
+    return {
+        systemPrompt: '',
+        featurePrompts: [],
+        toolDescriptions: [],
+        stableSections: [],
+        dynamicSections: [],
+        history: [],
+        ...overrides,
+    };
+}
 
 describe('MemoryHooks', () => {
     const testDbPath = './test-memory-hooks.db';
@@ -39,7 +53,8 @@ describe('MemoryHooks', () => {
     });
 
     afterEach(async () => {
-        // Clean up test files
+        // Close the DB connection so the test process can exit cleanly, then clean up test files
+        memoryManager.close();
         await fs.unlink(testDbPath).catch(() => {});
         await fs.rm(testMemoriesDir, { recursive: true, force: true }).catch(() => {});
     });
@@ -153,7 +168,7 @@ describe('MemoryHooks', () => {
                 taskId: 'test-task-3',
                 userId: userId,
                 task: 'Test task',
-                context: 'Initial context\n',
+                context: makeContext({ systemPrompt: 'Initial context\n' }),
                 contextType: 'stable',
                 tokenCount: 100,
                 cached: true
@@ -166,9 +181,10 @@ describe('MemoryHooks', () => {
             await hookManager.executeAsync('afterStableContext', context);
 
             // Context should be modified with session history
-            expect(context.context).toContain('## Recent Conversation');
-            expect(context.context).toContain('user: Hello');
-            expect(context.context).toContain('assistant: Hi there!');
+            const sections = context.context.stableSections.join('');
+            expect(sections).toContain('## Recent Conversation');
+            expect(sections).toContain('user: Hello');
+            expect(sections).toContain('assistant: Hi there!');
         });
 
         it('should not modify context when no session history', async () => {
@@ -178,19 +194,17 @@ describe('MemoryHooks', () => {
                 taskId: 'test-task-4',
                 userId: 'no-history-user',
                 task: 'Test task',
-                context: 'Initial context\n',
+                context: makeContext({ systemPrompt: 'Initial context\n' }),
                 contextType: 'stable',
                 tokenCount: 100,
                 cached: true
             };
 
-            const originalContext = context.context;
-
             await hookManager.executeAsync('afterStableContext', context);
 
             // Context should not have session history section
-            expect(context.context).not.toContain('## Recent Conversation');
-            expect(context.context).toBe(originalContext);
+            expect(context.context.stableSections).toEqual([]);
+            expect(context.context.systemPrompt).toBe('Initial context\n');
         });
 
         it('should limit to last 5 messages', async () => {
@@ -201,7 +215,7 @@ describe('MemoryHooks', () => {
                 taskId: 'test-task-5',
                 userId: userId,
                 task: 'Test task',
-                context: '',
+                context: makeContext(),
                 contextType: 'stable',
                 tokenCount: 0,
                 cached: true
@@ -216,7 +230,7 @@ describe('MemoryHooks', () => {
             await hookManager.executeAsync('afterStableContext', context);
 
             // Should only include last 5 messages (10 total)
-            const lines = context.context.split('\n').filter((line: string) => line.includes(':'));
+            const lines = context.context.stableSections.join('').split('\n').filter((line: string) => line.includes(':'));
             expect(lines.length).toBe(5);  // Last 5 messages
         });
     });
@@ -232,7 +246,7 @@ describe('MemoryHooks', () => {
             const context: any = {
                 taskId: 'test-task-6',
                 task: 'Beijing weather',
-                context: '',
+                context: makeContext(),
                 contextType: 'dynamic',
                 tokenCount: 0
             };
@@ -250,19 +264,17 @@ describe('MemoryHooks', () => {
             const context: any = {
                 taskId: 'test-task-7',
                 task: 'unique query with no results',
-                context: 'Original context',
+                context: makeContext({ systemPrompt: 'Original context' }),
                 contextType: 'dynamic',
                 tokenCount: 100
             };
-
-            const originalContext = context.context;
 
             await hookManager.executeAsync('afterDynamicContext', context);
 
             // Context should only have section header if there are results
             // If no results, it should not add the section
-            const hasResults = context.context.includes('## Relevant Past Conversations') &&
-                              context.context.includes('-');
+            const hasResults = context.context.dynamicSections.join('').includes('## Relevant Past Conversations') &&
+                              context.context.dynamicSections.join('').includes('-');
             expect(hasResults).toBe(false);
         });
     });
@@ -574,20 +586,20 @@ describe('MemoryHooks', () => {
                 taskId,
                 userId,
                 task: 'What is the weather in Hefei?',
-                context: 'System prompt\n',
+                context: makeContext({ systemPrompt: 'System prompt\n' }),
                 contextType: 'stable',
                 tokenCount: 100,
                 cached: true
             };
 
             await hookManager.executeAsync('afterStableContext', stableContext);
-            expect(stableContext.context).toContain('user: What is the weather in Hefei?');
+            expect(stableContext.context.stableSections.join('')).toContain('user: What is the weather in Hefei?');
 
             // afterDynamicContext
             const dynamicContext: any = {
                 taskId,
                 task: 'What is the weather in Hefei?',
-                context: '',
+                context: makeContext(),
                 contextType: 'dynamic',
                 tokenCount: 0
             };

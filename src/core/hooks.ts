@@ -1,4 +1,5 @@
 import { logger } from '../logger';
+import { Context } from '../prompt';
 
 // ============================================================================
 // Hook Context Types
@@ -20,15 +21,15 @@ import { logger } from '../logger';
  * 9. onError → Called when any error occurs during execution
  */
 export type HookContext =
-    | BeforeExecuteContext
-    | AfterStableContextContext
-    | AfterDynamicContextContext
-    | BeforeLLMCallContext
-    | AfterLLMCallContext
-    | BeforeToolCallContext
-    | AfterToolCallContext
-    | AfterExecuteContext
-    | OnErrorContext;
+  | BeforeExecuteContext
+  | AfterStableContextContext
+  | AfterDynamicContextContext
+  | BeforeLLMCallContext
+  | AfterLLMCallContext
+  | BeforeToolCallContext
+  | AfterToolCallContext
+  | AfterExecuteContext
+  | OnErrorContext;
 
 /**
  * Context for beforeExecute hook.
@@ -44,12 +45,12 @@ export type HookContext =
  * - Any custom properties via [key: string]: any
  */
 export interface BeforeExecuteContext {
-    taskId: string;
-    userId?: string;
-    task: string;
-    timestamp: number;
-    conversationId?: string;  // Can be set by hooks
-    [key: string]: any;
+  taskId: string;
+  userId?: string;
+  task: string;
+  timestamp: number;
+  conversationId?: string;  // Can be set by hooks
+  [key: string]: any;
 }
 
 /**
@@ -68,17 +69,17 @@ export interface BeforeExecuteContext {
  * - Inject user-specific static context
  *
  * Modifiable fields:
- * - context: Can be appended to (e.g., add session history)
+ * - context: append via context.stableSections.push(...) (e.g. session history)
  */
 export interface AfterStableContextContext {
-    taskId: string;
-    userId?: string;
-    task: string;
-    context: string;           // MODIFIABLE - Hooks can append content
-    contextType: 'stable';
-    tokenCount: number;
-    cached: boolean;           // Indicates if stable context is cache-optimized
-    [key: string]: any;
+  taskId: string;
+  userId?: string;
+  task: string;
+  context: Context;           // MODIFIABLE - Hooks can append content
+  contextType: 'stable';
+  tokenCount: number;
+  cached: boolean;           // Indicates if stable context is cache-optimized
+  [key: string]: any;
 }
 
 /**
@@ -96,16 +97,16 @@ export interface AfterStableContextContext {
  * - Modify dynamic context based on task
  *
  * Modifiable fields:
- * - context: Can be appended to (e.g., add search results, skills)
+ * - context: append via context.dynamicSections.push(...) (e.g. FTS5 results, skills)
  */
 export interface AfterDynamicContextContext {
-    taskId: string;
-    userId?: string;
-    task: string;
-    context: string;           // MODIFIABLE - Hooks can append content
-    contextType: 'dynamic';
-    tokenCount: number;
-    [key: string]: any;
+  taskId: string;
+  userId?: string;
+  task: string;
+  context: Context;           // MODIFIABLE - Hooks can append content
+  contextType: 'dynamic';
+  tokenCount: number;
+  [key: string]: any;
 }
 
 /**
@@ -122,12 +123,12 @@ export interface AfterDynamicContextContext {
  * - messages: Can be modified (e.g., compression, filtering)
  */
 export interface BeforeLLMCallContext {
-    taskId: string;
-    conversationId?: string;
-    messages: any[];           // MODIFIABLE - Hooks can modify messages
-    model: string;
-    estimatedTokens: number;
-    [key: string]: any;
+  taskId: string;
+  conversationId?: string;
+  messages: any[];           // MODIFIABLE - Hooks can modify messages
+  model: string;
+  estimatedTokens: number;
+  [key: string]: any;
 }
 
 /**
@@ -144,14 +145,14 @@ export interface BeforeLLMCallContext {
  * - All fields are read-only, hooks should only observe
  */
 export interface AfterLLMCallContext {
-    taskId: string;
-    conversationId?: string;
-    requestMessages: any[];
-    response: any;            // Contains content, model, usage, cached status
-    duration: number;
-    cached: boolean;
-    success: boolean;
-    [key: string]: any;
+  taskId: string;
+  conversationId?: string;
+  requestMessages: any[];
+  response: any;            // Contains content, model, usage, cached status
+  duration: number;
+  cached: boolean;
+  success: boolean;
+  [key: string]: any;
 }
 
 /**
@@ -168,12 +169,12 @@ export interface AfterLLMCallContext {
  * - toolArguments: Can be modified (e.g., validation, transformation)
  */
 export interface BeforeToolCallContext {
-    taskId: string;
-    conversationId?: string;
-    toolName: string;
-    toolArguments: Record<string, any>;  // MODIFIABLE - Hooks can modify arguments
-    timestamp: number;
-    [key: string]: any;
+  taskId: string;
+  conversationId?: string;
+  toolName: string;
+  toolArguments: Record<string, any>;  // MODIFIABLE - Hooks can modify arguments
+  timestamp: number;
+  [key: string]: any;
 }
 
 /**
@@ -191,15 +192,15 @@ export interface BeforeToolCallContext {
  * - All fields are read-only, hooks should only observe
  */
 export interface AfterToolCallContext {
-    taskId: string;
-    conversationId?: string;
-    toolName: string;
-    toolArguments: Record<string, any>;
-    result: any;              // Contains output, error, success
-    duration: number;
-    success: boolean;
-    errorMessage?: string;
-    [key: string]: any;
+  taskId: string;
+  conversationId?: string;
+  toolName: string;
+  toolArguments: Record<string, any>;
+  result: any;              // Contains output, error, success
+  duration: number;
+  success: boolean;
+  errorMessage?: string;
+  [key: string]: any;
 }
 
 /**
@@ -216,16 +217,16 @@ export interface AfterToolCallContext {
  * - All fields are read-only, hooks should only observe
  */
 export interface AfterExecuteContext {
-    taskId: string;
-    userId?: string;
-    conversationId?: string;
-    task: string;
-    result: string;
-    duration: number;
-    success: boolean;
-    turnCount: number;        // Number of conversation turns
-    toolCallCount: number;    // Number of tools executed
-    [key: string]: any;
+  taskId: string;
+  userId?: string;
+  conversationId?: string;
+  task: string;
+  result: string;
+  duration: number;
+  success: boolean;
+  turnCount: number;        // Number of conversation turns
+  toolCallCount: number;    // Number of tools executed
+  [key: string]: any;
 }
 
 /**
@@ -248,12 +249,12 @@ export interface AfterExecuteContext {
  * - All fields are read-only, hooks should only observe
  */
 export interface OnErrorContext {
-    taskId: string;
-    conversationId?: string;
-    error: Error;
-    phase: 'llm' | 'tool' | 'context' | 'unknown';
-    context?: any;            // Additional context about the error
-    [key: string]: any;
+  taskId: string;
+  conversationId?: string;
+  error: Error;
+  phase: 'llm' | 'tool' | 'context' | 'unknown';
+  context?: any;            // Additional context about the error
+  [key: string]: any;
 }
 
 // ============================================================================
@@ -261,10 +262,10 @@ export interface OnErrorContext {
 // ============================================================================
 
 export interface HookHandler<TContext extends HookContext = HookContext> {
-    id: string;
-    name: string;
-    priority: number;
-    handler: (context: TContext) => void | Promise<void>;
+  id: string;
+  name: string;
+  priority: number;
+  handler: (context: TContext) => void | Promise<void>;
 }
 
 // ============================================================================
@@ -272,58 +273,58 @@ export interface HookHandler<TContext extends HookContext = HookContext> {
 // ============================================================================
 
 export interface HookManager {
-    /**
-     * Register a hook handler
-     * @param hookName - Name of the hook point
-     * @param handler - Handler function with metadata
-     */
-    register<TContext extends HookContext>(
-        hookName: string,
-        handler: HookHandler<TContext>
-    ): void;
+  /**
+   * Register a hook handler
+   * @param hookName - Name of the hook point
+   * @param handler - Handler function with metadata
+   */
+  register<TContext extends HookContext>(
+    hookName: string,
+    handler: HookHandler<TContext>
+  ): void;
 
-    /**
-     * Unregister a hook handler
-     * @param hookName - Name of the hook point
-     * @param handlerId - ID of the handler to remove
-     */
-    unregister(hookName: string, handlerId: string): boolean;
+  /**
+   * Unregister a hook handler
+   * @param hookName - Name of the hook point
+   * @param handlerId - ID of the handler to remove
+   */
+  unregister(hookName: string, handlerId: string): boolean;
 
-    /**
-     * Execute all handlers for a hook (synchronous)
-     * Handlers are executed in priority order (lower number first)
-     * @param hookName - Name of the hook point
-     * @param context - Context object (can be modified by handlers)
-     */
-    execute<TContext extends HookContext>(
-        hookName: string,
-        context: TContext
-    ): void;
+  /**
+   * Execute all handlers for a hook (synchronous)
+   * Handlers are executed in priority order (lower number first)
+   * @param hookName - Name of the hook point
+   * @param context - Context object (can be modified by handlers)
+   */
+  execute<TContext extends HookContext>(
+    hookName: string,
+    context: TContext
+  ): void;
 
-    /**
-     * Execute all handlers for a hook (asynchronous)
-     * Handlers are executed sequentially in priority order
-     * @param hookName - Name of the hook point
-     * @param context - Context object (can be modified by handlers)
-     */
-    executeAsync<TContext extends HookContext>(
-        hookName: string,
-        context: TContext
-    ): Promise<void>;
+  /**
+   * Execute all handlers for a hook (asynchronous)
+   * Handlers are executed sequentially in priority order
+   * @param hookName - Name of the hook point
+   * @param context - Context object (can be modified by handlers)
+   */
+  executeAsync<TContext extends HookContext>(
+    hookName: string,
+    context: TContext
+  ): Promise<void>;
 
-    /**
-     * Get all registered handlers for a hook
-     * @param hookName - Name of the hook point
-     */
-    getHandlers<TContext extends HookContext>(
-        hookName: string
-    ): HookHandler<TContext>[];
+  /**
+   * Get all registered handlers for a hook
+   * @param hookName - Name of the hook point
+   */
+  getHandlers<TContext extends HookContext>(
+    hookName: string
+  ): HookHandler<TContext>[];
 
-    /**
-     * Check if a hook has any handlers registered
-     * @param hookName - Name of the hook point
-     */
-    hasHandlers(hookName: string): boolean;
+  /**
+   * Check if a hook has any handlers registered
+   * @param hookName - Name of the hook point
+   */
+  hasHandlers(hookName: string): boolean;
 }
 
 // ============================================================================
@@ -353,68 +354,68 @@ export interface HookManager {
  * - 50-100: Logging and debugging
  */
 export const HOOKS = {
-    /**
-     * beforeExecute: Called at the start of agent execution.
-     * Use for: Starting conversations, initializing state, logging start.
-     * Priority: 10 (Memory), 50 (Logger)
-     */
-    BEFORE_EXECUTE: 'beforeExecute',
+  /**
+   * beforeExecute: Called at the start of agent execution.
+   * Use for: Starting conversations, initializing state, logging start.
+   * Priority: 10 (Memory), 50 (Logger)
+   */
+  BEFORE_EXECUTE: 'beforeExecute',
 
-    /**
-     * afterStableContext: Called after building stable (cached) context.
-     * Use for: Adding session history, user-specific static context.
-     * Priority: 10 (Memory), 20 (Cache), 50 (Logger)
-     */
-    AFTER_STABLE_CONTEXT: 'afterStableContext',
+  /**
+   * afterStableContext: Called after building stable (cached) context.
+   * Use for: Adding session history, user-specific static context.
+   * Priority: 10 (Memory), 20 (Cache), 50 (Logger)
+   */
+  AFTER_STABLE_CONTEXT: 'afterStableContext',
 
-    /**
-     * afterDynamicContext: Called after building dynamic (per-turn) context.
-     * Use for: Adding search results, relevant skills, task-specific context.
-     * Priority: 10 (Memory), 50 (Logger)
-     */
-    AFTER_DYNAMIC_CONTEXT: 'afterDynamicContext',
+  /**
+   * afterDynamicContext: Called after building dynamic (per-turn) context.
+   * Use for: Adding search results, relevant skills, task-specific context.
+   * Priority: 10 (Memory), 50 (Logger)
+   */
+  AFTER_DYNAMIC_CONTEXT: 'afterDynamicContext',
 
-    /**
-     * beforeLLMCall: Called before each LLM API call.
-     * Use for: Preflight checks, request logging, token estimation.
-     * Priority: 20 (Monitor), 50 (Logger)
-     */
-    BEFORE_LLM_CALL: 'beforeLLMCall',
+  /**
+   * beforeLLMCall: Called before each LLM API call.
+   * Use for: Preflight checks, request logging, token estimation.
+   * Priority: 20 (Monitor), 50 (Logger)
+   */
+  BEFORE_LLM_CALL: 'beforeLLMCall',
 
-    /**
-     * afterLLMCall: Called after each LLM API response.
-     * Use for: Recording interaction, tracking metrics, cost monitoring.
-     * Priority: 10 (Memory), 20 (Monitor), 50 (Logger)
-     */
-    AFTER_LLM_CALL: 'afterLLMCall',
+  /**
+   * afterLLMCall: Called after each LLM API response.
+   * Use for: Recording interaction, tracking metrics, cost monitoring.
+   * Priority: 10 (Memory), 20 (Monitor), 50 (Logger)
+   */
+  AFTER_LLM_CALL: 'afterLLMCall',
 
-    /**
-     * beforeToolCall: Called before each tool execution.
-     * Use for: Argument validation, execution timing, logging.
-     * Priority: 20 (Monitor), 50 (Logger)
-     */
-    BEFORE_TOOL_CALL: 'beforeToolCall',
+  /**
+   * beforeToolCall: Called before each tool execution.
+   * Use for: Argument validation, execution timing, logging.
+   * Priority: 20 (Monitor), 50 (Logger)
+   */
+  BEFORE_TOOL_CALL: 'beforeToolCall',
 
-    /**
-     * afterToolCall: Called after each tool execution.
-     * Use for: Recording execution, tracking success rates, error tracking.
-     * Priority: 10 (Memory), 20 (Monitor), 50 (Logger)
-     */
-    AFTER_TOOL_CALL: 'afterToolCall',
+  /**
+   * afterToolCall: Called after each tool execution.
+   * Use for: Recording execution, tracking success rates, error tracking.
+   * Priority: 10 (Memory), 20 (Monitor), 50 (Logger)
+   */
+  AFTER_TOOL_CALL: 'afterToolCall',
 
-    /**
-     * afterExecute: Called after successful agent execution completion.
-     * Use for: Learning triggers, ending conversations, final metrics.
-     * Priority: 10 (Memory), 20 (Monitor), 50 (Logger)
-     */
-    AFTER_EXECUTE: 'afterExecute',
+  /**
+   * afterExecute: Called after successful agent execution completion.
+   * Use for: Learning triggers, ending conversations, final metrics.
+   * Priority: 10 (Memory), 20 (Monitor), 50 (Logger)
+   */
+  AFTER_EXECUTE: 'afterExecute',
 
-    /**
-     * onError: Called when any error occurs during execution.
-     * Use for: Error handling, cleanup, notifications, ending conversations.
-     * Priority: 10 (Memory), 50 (Logger)
-     */
-    ON_ERROR: 'onError'
+  /**
+   * onError: Called when any error occurs during execution.
+   * Use for: Error handling, cleanup, notifications, ending conversations.
+   * Priority: 10 (Memory), 50 (Logger)
+   */
+  ON_ERROR: 'onError'
 } as const;
 
 export type HookName = typeof HOOKS[keyof typeof HOOKS];
@@ -424,100 +425,100 @@ export type HookName = typeof HOOKS[keyof typeof HOOKS];
 // ============================================================================
 
 export class HookManagerImpl implements HookManager {
-    private hooks: Map<string, HookHandler[]> = new Map();
+  private hooks: Map<string, HookHandler[]> = new Map();
 
-    register<TContext extends HookContext>(
-        hookName: string,
-        handler: HookHandler<TContext>
-    ): void {
-        if (!this.hooks.has(hookName)) {
-            this.hooks.set(hookName, []);
-        }
-
-        const handlers = this.hooks.get(hookName)!;
-        handlers.push(handler as HookHandler);
-
-        // Sort by priority (lower numbers first)
-        handlers.sort((a, b) => a.priority - b.priority);
-
-        logger.info(`[HookManager] Registered "${handler.id}" for "${hookName}" (priority: ${handler.priority})`);
+  register<TContext extends HookContext>(
+    hookName: string,
+    handler: HookHandler<TContext>
+  ): void {
+    if (!this.hooks.has(hookName)) {
+      this.hooks.set(hookName, []);
     }
 
-    unregister(hookName: string, handlerId: string): boolean {
-        if (!this.hooks.has(hookName)) {
-            return false;
-        }
+    const handlers = this.hooks.get(hookName)!;
+    handlers.push(handler as HookHandler);
 
-        const handlers = this.hooks.get(hookName)!;
-        const index = handlers.findIndex(h => h.id === handlerId);
+    // Sort by priority (lower numbers first)
+    handlers.sort((a, b) => a.priority - b.priority);
 
-        if (index === -1) {
-            return false;
-        }
+    logger.info(`[HookManager] Registered "${handler.id}" for "${hookName}" (priority: ${handler.priority})`);
+  }
 
-        handlers.splice(index, 1);
-
-        if (handlers.length === 0) {
-            this.hooks.delete(hookName);
-        }
-
-        logger.info(`[HookManager] Unregistered "${handlerId}" from "${hookName}"`);
-        return true;
+  unregister(hookName: string, handlerId: string): boolean {
+    if (!this.hooks.has(hookName)) {
+      return false;
     }
 
-    execute<TContext extends HookContext>(
-        hookName: string,
-        context: TContext
-    ): void {
-        const handlers = this.hooks.get(hookName);
-        const handlerCount = handlers?.length || 0;
-        logger.debug(`[HookManager] Executing hook "${hookName}" with ${handlerCount} handlers`);
+    const handlers = this.hooks.get(hookName)!;
+    const index = handlers.findIndex(h => h.id === handlerId);
 
-        if (handlerCount === 0) {
-            return;
-        }
-
-        for (const handler of handlers!) {
-            try {
-                handler.handler(context);
-            } catch (error) {
-                logger.error(`[HookManager] Error in handler "${handler.id}" for hook "${hookName}":`, String(error));
-            }
-        }
+    if (index === -1) {
+      return false;
     }
 
-    async executeAsync<TContext extends HookContext>(
-        hookName: string,
-        context: TContext
-    ): Promise<void> {
-        const handlers = this.hooks.get(hookName);
-        const handlerCount = handlers?.length || 0;
-        logger.debug(`[HookManager] Executing async hook "${hookName}" with ${handlerCount} handlers`);
+    handlers.splice(index, 1);
 
-        if (handlerCount === 0) {
-            return;
+    if (handlers.length === 0) {
+      this.hooks.delete(hookName);
+    }
+
+    logger.info(`[HookManager] Unregistered "${handlerId}" from "${hookName}"`);
+    return true;
+  }
+
+  execute<TContext extends HookContext>(
+    hookName: string,
+    context: TContext
+  ): void {
+    const handlers = this.hooks.get(hookName);
+    const handlerCount = handlers?.length || 0;
+    logger.debug(`[HookManager] Executing hook "${hookName}" with ${handlerCount} handlers`);
+
+    if (handlerCount === 0) {
+      return;
+    }
+
+    for (const handler of handlers!) {
+      try {
+        handler.handler(context);
+      } catch (error) {
+        logger.error(`[HookManager] Error in handler "${handler.id}" for hook "${hookName}":`, String(error));
+      }
+    }
+  }
+
+  async executeAsync<TContext extends HookContext>(
+    hookName: string,
+    context: TContext
+  ): Promise<void> {
+    const handlers = this.hooks.get(hookName);
+    const handlerCount = handlers?.length || 0;
+    logger.debug(`[HookManager] Executing async hook "${hookName}" with ${handlerCount} handlers`);
+
+    if (handlerCount === 0) {
+      return;
+    }
+
+    for (const handler of handlers!) {
+      try {
+        const result = handler.handler(context);
+        if (result instanceof Promise) {
+          await result;
         }
-
-        for (const handler of handlers!) {
-            try {
-                const result = handler.handler(context);
-                if (result instanceof Promise) {
-                    await result;
-                }
-            } catch (error) {
-                logger.error(`[HookManager] Error in handler "${handler.id}" for hook "${hookName}":`, String(error));
-            }
-        }
+      } catch (error) {
+        logger.error(`[HookManager] Error in handler "${handler.id}" for hook "${hookName}":`, String(error));
+      }
     }
+  }
 
-    getHandlers<TContext extends HookContext>(
-        hookName: string
-    ): HookHandler<TContext>[] {
-        return (this.hooks.get(hookName) || []) as HookHandler<TContext>[];
-    }
+  getHandlers<TContext extends HookContext>(
+    hookName: string
+  ): HookHandler<TContext>[] {
+    return (this.hooks.get(hookName) || []) as HookHandler<TContext>[];
+  }
 
-    hasHandlers(hookName: string): boolean {
-        const handlers = this.hooks.get(hookName);
-        return handlers !== undefined && handlers.length > 0;
-    }
+  hasHandlers(hookName: string): boolean {
+    const handlers = this.hooks.get(hookName);
+    return handlers !== undefined && handlers.length > 0;
+  }
 }

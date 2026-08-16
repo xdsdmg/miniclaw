@@ -8,7 +8,6 @@ import { KnowledgeExtractor, ExtractionContext } from '../learning/extractor';
 import { ContextCompressor } from '../learning/compression';
 import { LearningStorage } from '../learning/storage';
 import { LLMProvider } from '../llm';
-import { MemoryStorage } from './storage';
 import type {
   BeforeExecuteContext,
   AfterStableContextContext,
@@ -24,37 +23,98 @@ import type {
 /**
  * Memory Hooks
  *
- * Integrates Memory System with miniclaw through Hook Manager.
- * Uses Mode B: Hooks can modify context (add session history, search results, etc.)
+ * Bridges the Memory / Learning system with the Agent's Hook architecture.
+ * It registers one handler per hook point (see registerTo) so that every step of
+ * the agent execution lifecycle is reflected in the memory database and, in turn,
+ * past memory is injected back into the LLM prompt.
  *
- * Phase 7 Week 4: Integration with Learning Loop
- * - Load relevant skills in afterDynamicContext
- * - Check learning triggers in afterExecute
- * - Compress context before LLM call if needed
+ * ── Working Logic ─────────────────────────────────────────────────────────────
+ *
+ * The Agent fires 9 hook points during execution (beforeExecute → afterExecute /
+ * onError). MemoryHooks translates those events into memory operations, which
+ * fall into three categories:
+ *
+ *   A. CONTEXT ENRICHMENT — these hooks push content into the shared Context
+ *      object (the Go-style context threaded through execution), so the final
+ *      system prompt includes it:
+ *      - afterStableContext : pushes the user's recent session history into
+ *                             context.stableSections
+ *      - afterDynamicContext: pushes FTS5 search results + relevant learned
+ *                             skills into context.dynamicSections
+ *      These sections flow into the final system prompt, so the LLM sees
+ *      relevant past conversations and skills.
+ *
+ *   B. DATA RECORDING
+ *      - beforeExecute  : startConversation() → seeds context.conversationId
+ *      - afterLLMCall   : saveLLMInteraction() (request/response/tokens/cache)
+ *      - afterToolCall  : saveToolExecution() (tool name, args, result, duration)
+ *      - afterExecute   : endConversation(status = 'completed')
+ *      - onError        : endConversation(status = 'error')
+ *
+ *   C. LEARNING LOOP
+ *      - afterDynamicContext: load relevant skills into the prompt
+ *      - beforeLLMCall      : compress oversized context if token budget exceeded
+ *      - afterExecute       : evaluate learning triggers → extract knowledge → save skills
+ *
+ * All handlers run at priority 10 so they execute before Logger(50)/Monitor(20)
+ * hooks and can modify context for downstream hooks to consume.
+ *
+ * @see Agent.runLoop / Agent.executeTaskInternal for where each hook fires.
  */
 export class MemoryHooks {
+  /** Loads relevant learned skills for the current task (used in afterDynamicContext). */
   private skillLoader?: SkillLoader;
+  /** Evaluates whether a completed task qualifies for learning (used in afterExecute). */
   private learningTriggers?: LearningTriggers;
+  /** Extracts structured knowledge (skill/pattern/fact) from successful conversations. */
   private knowledgeExtractor?: KnowledgeExtractor;
+  /** Compresses long contexts before LLM calls to respect token limits. */
   private contextCompressor?: ContextCompressor;
+  /** Persistence layer for learned skills (skills.db). */
   private learningStorage?: LearningStorage;
 
   constructor(
+    /**
+     * Unified memory service (the data layer). Used for:
+     * - startConversation / endConversation — conversation lifecycle
+     * - fts5Search — retrieving relevant past conversations for context injection
+     * - saveLLMInteraction / saveToolExecution — persisting execution records
+     * Required; the memory system always exists when MemoryHooks is created.
+     */
     private memoryManager: MemoryManager,
+    /**
+     * In-memory per-user conversation buffer. Used for:
+     * - getSessionHistory — recent messages appended in afterStableContext
+     * - addMessage — tracking the running conversation so history is available
+     *   to the next task without re-reading the database.
+     * Required.
+     */
     private sessionManager: SessionManager,
+    /**
+     * Skills database. When provided, enables the learning subsystem:
+     * SkillLoader, LearningTriggers, KnowledgeExtractor, ContextCompressor.
+     * When undefined, all learning-related hooks become no-ops.
+     * Optional (falls back to memory-only behavior).
+     */
     learningStorage?: LearningStorage,
+    /**
+     * LLM provider used by KnowledgeExtractor for semantic analysis during
+     * knowledge extraction. Only needed when learningStorage is provided.
+     * Optional.
+     */
     llmProvider?: LLMProvider,
-    memoryStorage?: MemoryStorage
   ) {
-    // Initialize learning components if storage is provided
+    // Initialize the learning components only when a skills store is supplied,
+    // so memory-only setups skip the entire learning loop.
     if (learningStorage) {
       this.learningStorage = learningStorage;
       this.skillLoader = new SkillLoader(learningStorage);
       this.learningTriggers = new LearningTriggers();
 
-      // KnowledgeExtractor requires LLMProvider and MemoryStorage
-      if (llmProvider && memoryStorage) {
-        this.knowledgeExtractor = new KnowledgeExtractor(llmProvider, memoryStorage);
+      // KnowledgeExtractor requires both an LLM and the raw storage to analyze
+      // past tool executions; skip it (leave undefined) if either is missing.
+      if (llmProvider && this.memoryManager.getStorage()) {
+        this.knowledgeExtractor = new KnowledgeExtractor(llmProvider, this.memoryManager.getStorage());
       }
 
       this.contextCompressor = new ContextCompressor();
@@ -86,7 +146,7 @@ export class MemoryHooks {
   /**
    * afterStableContext: Add session history to stable context
    *
-   * Mode B: This hook MODIFIES context.context by appending session history
+   * Appends the user's recent session history as a stable-context section.
    */
   async onAfterStableContext(context: AfterStableContextContext): Promise<void> {
     if (!this.memoryManager || !context.userId) return;
@@ -97,11 +157,12 @@ export class MemoryHooks {
     const history = this.sessionManager.getSessionHistory(context.userId);
 
     if (history.length > 0) {
-      // MODE B: Modify context by appending session history
-      context.context += '\n## Recent Conversation\n\n';
+      // Append session history as a stable-context section
+      let section = '## Recent Conversation\n\n';
       for (const msg of history.slice(-5)) {  // Last 5 messages
-        context.context += `${msg.role}: ${msg.content}\n`;
+        section += `${msg.role}: ${msg.content}\n`;
       }
+      context.context.stableSections.push(section);
 
       logger.debug(`[MemoryHooks] Added ${history.length} messages to context`);
     }
@@ -110,7 +171,7 @@ export class MemoryHooks {
   /**
    * afterDynamicContext: Add search results and relevant skills
    *
-   * Mode B: This hook MODIFIES context.context by appending search results and skills
+   * Appends FTS5 search results and relevant skills as dynamic-context sections.
    */
   async onAfterDynamicContext(context: AfterDynamicContextContext): Promise<void> {
     if (!this.memoryManager) return;
@@ -120,12 +181,13 @@ export class MemoryHooks {
     // FTS5 search for relevant past conversations
     const searchResults = this.memoryManager.fts5Search(context.task, 3);
     if (searchResults && searchResults.length > 0) {
-      // MODE B: Modify context by appending search results
-      context.context += '\n## Relevant Past Conversations\n\n';
+      // Append search results as a dynamic-context section
+      let section = '## Relevant Past Conversations\n\n';
       for (const result of searchResults.slice(0, 3)) {
         const snippet = result.snippet || result.content || JSON.stringify(result);
-        context.context += `- ${snippet}\n`;
+        section += `- ${snippet}\n`;
       }
+      context.context.dynamicSections.push(section);
       logger.debug(`[MemoryHooks] Added ${searchResults.length} search results to context`);
     }
 
@@ -135,8 +197,7 @@ export class MemoryHooks {
     if (this.skillLoader) {
       const skills = this.skillLoader.loadRelevantSkills(context.task, context.userId, 3);
       if (skills.length > 0) {
-        const formattedSkills = this.skillLoader.formatSkillsForContext(skills);
-        context.context += '\n' + formattedSkills;
+        context.context.dynamicSections.push(this.skillLoader.formatSkillsForContext(skills));
         logger.debug(`[MemoryHooks] Added ${skills.length} relevant skills to context`);
       }
     }

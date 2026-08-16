@@ -109,6 +109,7 @@ export function createServer(config: ServerConfig) {
     provider: config.provider,
     apiKey: config.llmApiKey,
     baseURL: config.llmBaseURL,
+    enableMemory: true,
   });
 
   app.use(express.json());

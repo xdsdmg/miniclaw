@@ -3,11 +3,11 @@
  *
  * Core AI Agent implementation with Hook Architecture support.
  * Responsible for:
- * 1. Interacting with LLM to generate responses
- * 2. Parsing tool call requests from LLM
- * 3. Executing tools and collecting results
- * 4. Iterating until task completion
- * 5. Executing hooks at defined points for plugin integration
+ *   1. Interacting with LLM to generate responses
+ *   2. Parsing tool call requests from LLM
+ *   3. Executing tools and collecting results
+ *   4. Iterating until task completion
+ *   5. Executing hooks at defined points for plugin integration
  *
  * Execution Flow:
  *   1. Send task and available tools to LLM
@@ -25,6 +25,7 @@ import {
   ContextBuilder,
   extractToolDescriptions,
   DEFAULT_SYSTEM_PROMPT,
+  Context,
 } from './prompt';
 import { logger } from './logger';
 import { HookManager, HookManagerImpl, HOOKS, BeforeExecuteContext } from './core/hooks';
@@ -71,8 +72,6 @@ export interface AgentConfig {
   // Hook Configuration
   /** Optional: Use existing HookManager */
   hookManager?: HookManager;
-  /** Enable memory hooks (default: true if enableMemory is true) */
-  enableMemoryHooks?: boolean;
 }
 
 /**
@@ -170,9 +169,6 @@ export class Agent {
   private config: AgentConfig;
   private systemPrompt: string;
   private featurePrompts: string[];
-  // Enhanced contexts from hooks (stored temporarily for single task execution)
-  private enhancedStableContext?: string;
-  private enhancedDynamicContext?: string;
 
   /**
    * Constructor
@@ -189,7 +185,7 @@ export class Agent {
     this.hookManager = config.hookManager || new HookManagerImpl();
 
     // Initialize Memory Hooks if enabled
-    if (config.enableMemory !== false && config.enableMemoryHooks !== false) {
+    if (config.enableMemory !== false) {
       this.initializeMemoryHooks();
     }
 
@@ -262,7 +258,6 @@ export class Agent {
         sessionManager,
         learningStorage,
         this.llm,
-        memoryManager.getStorage()
       );
       memoryHooks.registerTo(this.hookManager);
 
@@ -291,37 +286,19 @@ export class Agent {
   }
 
   /**
-   * Build stable context
-   * Base system prompt that Memory hooks can enhance with:
-   * - MEMORY.md and USER.md (frozen snapshot)
-   * - Skill index (names only)
-   * - Session history (if userId provided)
+   * Create the base Context for a task: identity prompt + feature prompts + tool
+   * descriptions. Stable/dynamic sections and history start empty; hooks and
+   * runLoop populate them in place.
    */
-  private async buildStableContext(_task: string, _userId?: string): Promise<string> {
-    // Base system prompt
-    const toolDescs = extractToolDescriptions(tools);
-    const contextBuilder = new ContextBuilder({
+  private createBaseContext(): Context {
+    return {
       systemPrompt: this.systemPrompt,
       featurePrompts: this.featurePrompts,
-      toolDescriptions: toolDescs,
-      userMessage: '', // Will be added separately
-    });
-
-    // Build base context (without user message)
-    const baseMessages = contextBuilder.build();
-    const systemMessage = baseMessages[0];
-    return systemMessage.content;
-  }
-
-  /**
-   * Build dynamic context
-   * Memory hooks will add:
-   * - FTS5 search results
-   * - Relevant skills
-   */
-  private async buildDynamicContext(_task: string, _userId?: string): Promise<string> {
-    // Memory hooks will add search results and relevant skills
-    return '';
+      toolDescriptions: extractToolDescriptions(tools),
+      stableSections: [],
+      dynamicSections: [],
+      history: [],
+    };
   }
 
   /**
@@ -329,22 +306,31 @@ export class Agent {
    * Core execution loop with hook execution at key points
    *
    * Loop Logic:
-   *   1. Build context (system prompt + history + current task)
+   *   1. Materialize the Context into messages (system + history + current task)
    *   2. Execute beforeLLMCall hook
    *   3. Send context and available tools to LLM
    *   4. Execute afterLLMCall hook
-   *   5. If LLM returns tool calls, execute tools and append results to history
+   *   5. If LLM returns tool calls:
+   *        a. Record assistant message (with tool_calls) in history
+   *        b. For each tool call: beforeToolCall hook → execute tool → afterToolCall hook
+   *        c. Append tool result to history
    *   6. If no tool calls, return LLM's response content as final result
    *   7. Repeat steps 2-6 until max iterations reached
    *
-   * @param input       Task description
-   * @param onProgress Progress callback function for real-time execution progress
+   * @param input            Task description
+   * @param onProgress       Progress callback function for real-time execution progress
+   * @param externalContext  Optional ExecutionContext to reuse. When provided (from
+   *                         executeTaskInternal), the caller observes the real
+   *                         turnCount/toolCallCount/conversationId after the loop.
+   * @param ctx              Optional task Context to reuse (from executeTaskInternal);
+   *                         falls back to a fresh base Context when omitted.
    * @returns Task execution result (LLM's final response content)
    */
   public async runLoop(
     input: string,
     onProgress?: ProgressCallback,
-    externalContext?: ExecutionContext
+    externalContext?: ExecutionContext,
+    ctx?: Context
   ): Promise<string> {
     // When an external context is provided (from executeTaskInternal), reuse it so the
     // caller observes the real turnCount/toolCallCount/conversationId after the loop.
@@ -354,39 +340,18 @@ export class Agent {
       conversationId: undefined
     };
 
-    // Use enhanced contexts if available (from hooks), otherwise fall back to default
-    const systemPrompt = this.enhancedStableContext || this.systemPrompt;
-    const dynamicContext = this.enhancedDynamicContext || '';
+    // Use the task's Context when provided (from executeTaskInternal); otherwise
+    // fall back to a fresh base Context for direct runLoop calls.
+    const context = ctx ?? this.createBaseContext();
 
-    // Combine system prompt with dynamic context
-    const fullSystemPrompt = dynamicContext
-      ? `${systemPrompt}\n\n${dynamicContext}`
-      : systemPrompt;
-
-    // Build initial messages: system prompt + user task
-    // Note: fullSystemPrompt already contains tool descriptions and feature prompts
-    //       from buildStableContext, so we don't pass them again to avoid duplication.
-    const initialMessages = new ContextBuilder({
-      systemPrompt: fullSystemPrompt,
-      featurePrompts: [],
-      toolDescriptions: [],
-      userMessage: input,
-    }).build();
-
-    // Split into prefix (system) and history (user message)
-    // Prefix is built once and reused; history accumulates across iterations
-    const prefixMessages = initialMessages.slice(0, -1);
-    const history: ChatMessage[] = [initialMessages[initialMessages.length - 1]];
-
-    // Clear enhanced contexts after use (they're single-use)
-    this.enhancedStableContext = undefined;
-    this.enhancedDynamicContext = undefined;
+    // Seed the conversation with the user's task message.
+    context.history.push({ role: 'user', content: input });
 
     while (executionContext.turnCount < MAX_ITERATIONS) {
       executionContext.turnCount++;
       onProgress?.({ stage: 'thinking', message: `Iteration ${executionContext.turnCount}: Thinking...` });
 
-      const allMessages = [...prefixMessages, ...history];
+      const allMessages = new ContextBuilder(context).build();
 
       // ===== Hook: beforeLLMCall =====
       await this.hookManager.executeAsync(HOOKS.BEFORE_LLM_CALL, {
@@ -441,8 +406,8 @@ export class Agent {
 
       if (response.toolCalls && response.toolCalls.length > 0) {
         // Record assistant message with tool calls
-        logger.debug(`toolCalls: ${JSON.stringify(response.toolCalls)}`)
-        history.push({
+        logger.debug(`toolCalls: ${JSON.stringify(response.toolCalls)}`);
+        context.history.push({
           role: 'assistant',
           content: response.content || '',
           tool_calls: response.toolCalls,
@@ -513,7 +478,7 @@ export class Agent {
             logger.warn('[Agent] XXX hook error:', err as Error);
           });
 
-          history.push({
+          context.history.push({
             role: 'tool',
             content: result,
             tool_call_id: toolCall.id,
@@ -521,7 +486,7 @@ export class Agent {
         }
       } else {
         // Final response — no tool calls
-        history.push({ role: 'assistant', content: response.content });
+        context.history.push({ role: 'assistant', content: response.content });
         onProgress?.({ stage: 'completed', message: 'Task completed' });
         return response.content;
       }
@@ -602,47 +567,37 @@ export class Agent {
         conversationId: beforeExecuteContext.conversationId
       };
 
-      // ===== Build Stable Context =====
-      const stableContext = await this.buildStableContext(task, userId);
+      const ctx = this.createBaseContext();
 
       // ===== Hook: afterStableContext =====
       const stableContextState = {
         taskId,
         userId,
         task,
-        context: stableContext,
+        context: ctx,
         contextType: 'stable' as const,
-        tokenCount: this.estimateTokens([{ role: 'system', content: stableContext }]),
+        tokenCount: this.estimateTokens(new ContextBuilder(ctx).build()),
         cached: true
       };
       await this.hookManager.executeAsync(HOOKS.AFTER_STABLE_CONTEXT, stableContextState).catch(err => {
         logger.warn('[Agent] afterStableContext hook error:', err as Error);
       });
 
-      // Store enhanced stable context for runLoop to use
-      this.enhancedStableContext = stableContextState.context;
-
-      // ===== Build Dynamic Context =====
-      const dynamicContext = await this.buildDynamicContext(task, userId);
-
       // ===== Hook: afterDynamicContext =====
       const dynamicContextState = {
         taskId,
         userId,
         task,
-        context: dynamicContext,
+        context: ctx,
         contextType: 'dynamic' as const,
-        tokenCount: this.estimateTokens([{ role: 'system', content: dynamicContext }])
+        tokenCount: this.estimateTokens(new ContextBuilder(ctx).build()),
       };
       await this.hookManager.executeAsync(HOOKS.AFTER_DYNAMIC_CONTEXT, dynamicContextState).catch(err => {
         logger.warn('[Agent] afterDynamicContext hook error:', err as Error);
       });
 
-      // Store enhanced dynamic context for runLoop to use
-      this.enhancedDynamicContext = dynamicContextState.context;
-
       // Execute main loop
-      const result = await this.runLoop(task, onProgress, execContext);
+      const result = await this.runLoop(task, onProgress, execContext, ctx);
 
       // ===== Hook: afterExecute =====
       await this.hookManager.executeAsync(HOOKS.AFTER_EXECUTE, {
