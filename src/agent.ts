@@ -29,9 +29,9 @@ import {
 } from './prompt';
 import { logger } from './logger';
 import { HookManager, HookManagerImpl, HOOKS, BeforeExecuteContext } from './core/hooks';
-import { MemoryHooks } from './memory/hooks';
-import { MemoryManager } from './memory/manager';
-import { SessionManager } from './memory/session-manager';
+import { MemoryHooks } from '@memory/hooks';
+import { MemoryManager } from '@memory/manager';
+import { SessionManager } from '@memory/session-manager';
 import { LearningStorage } from './learning';
 import path from 'path';
 

@@ -29,6 +29,8 @@
     "jest": "^30.3.0",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.0.0",
+    "tsc-alias": "^1.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "^5.0.0"
   }
 }

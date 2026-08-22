@@ -12,7 +12,10 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "@memory/*": ["./src/memory/*"]
+    }
   },
   "include": [
     "src/**/*.ts"
@@ -22,5 +25,8 @@
     "dist",
     "**/*.test.ts",
     "**/__tests__/**"
-  ]
+  ],
+  "ts-node": {
+    "require": ["tsconfig-paths/register"]
+  }
 }
