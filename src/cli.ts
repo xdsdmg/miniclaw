@@ -16,11 +16,11 @@
  */
 
 import { Command } from 'commander';
-import { Agent } from './agent';
-import { startServer } from './server';
-import { getDefaultProvider } from './llm/config';
-import { listConfiguredProviders, getApiKeyEnvVars } from './llm/env-api-keys';
-import { getGlobalModels } from './llm/registry';
+import { Agent } from '@src/agent';
+import { startServer } from '@src/server';
+import { getDefaultProvider } from '@llm/config';
+import { listConfiguredProviders, getApiKeyEnvVars } from '@llm/env-api-keys';
+import { getGlobalModels } from '@llm/registry';
 
 /**
  * CLI program main object

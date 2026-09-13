@@ -6,11 +6,11 @@
  * fully functional.
  */
 
-import type { ChatMessage } from '../prompt';
+import type { ChatMessage } from '@src/prompt';
 import { getCustomProviders, loadConfigFile, loadEnvFile, resolveEffectiveConfig } from './config';
-import { deepseekProvider } from './providers/deepseek';
-import { createOpenAICompatibleProvider } from './providers/custom';
-import { getGlobalModels } from './registry';
+import { deepseekProvider } from '@llm/providers/deepseek';
+import { createOpenAICompatibleProvider } from '@llm/providers/custom';
+import { getGlobalModels } from '@llm/registry';
 import type {
   AssistantMessage,
   CompletionParams,
@@ -23,7 +23,8 @@ import type {
   StreamEvent,
   StreamOptions,
   Tool,
-} from './types';
+  Api
+} from '@llm/types';
 
 /** Tool definition in the tools-schema format (OpenAI function calling style) */
 interface ToolSchemaEntry {
@@ -180,7 +181,7 @@ export class LLMProvider implements LLMProviderInterface {
   }
 
   /** Select the default model for a provider (model override, else first model) */
-  private selectModel(provider: Provider): Model {
+  private selectModel(provider: Provider<Api>): Model {
     const models = provider.getModels();
     if (models.length === 0) {
       throw new Error(`Provider ${provider.id} has no models`);

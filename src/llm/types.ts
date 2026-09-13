@@ -9,6 +9,8 @@
  * - Auth as provider property
  */
 
+import type { ChatMessage } from '@src/prompt';
+
 // ─── Api Protocol Type ───────────────────────────────────────────────────────
 
 /**
@@ -19,14 +21,11 @@
  * - "openai-responses":    OpenAI Responses API (reserved)
  * - "google-gemini":       Google Gemini API (reserved)
  */
-export type KnownApi =
+export type Api =
   | 'openai-completions'
   | 'anthropic-messages'
   | 'openai-responses'
   | 'google-gemini';
-
-/** Any API string — allows custom API protocols. */
-export type Api = KnownApi | (string & {});
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -37,7 +36,7 @@ export type Api = KnownApi | (string & {});
  * `TApi` lets concrete provider factories declare which API protocol they use
  * (e.g. `deepseekProvider(): Provider<"openai-completions">`).
  */
-export interface Provider<TApi extends Api = Api> {
+export interface Provider<TApi extends Api> {
   readonly id: string;
   readonly name: string;
   /** Default base URL (user config can override) */
@@ -82,10 +81,10 @@ export interface Model<TApi extends Api = Api> {
   };
   /** Compatibility overrides (type-level dispatch via TApi) */
   compat?: TApi extends 'openai-completions'
-    ? OpenAICompletionsCompat
-    : TApi extends 'anthropic-messages'
-      ? AnthropicMessagesCompat
-      : never;
+  ? OpenAICompletionsCompat
+  : TApi extends 'anthropic-messages'
+  ? AnthropicMessagesCompat
+  : never;
   /** Maximum context window in tokens */
   contextWindow: number;
   /** Maximum output tokens */
@@ -306,7 +305,6 @@ export interface CompletionParams {
   extraBody?: Record<string, unknown>;
 }
 
-import type { ChatMessage } from '../prompt';
 
 /**
  * Legacy tool call shape (OpenAI function-calling format).

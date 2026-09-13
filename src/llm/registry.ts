@@ -29,11 +29,11 @@ import type {
 
 export interface Models {
   /** Register a provider */
-  register(provider: Provider): void;
+  register(provider: Provider<Api>): void;
   /** Get all registered providers */
-  getProviders(): readonly Provider[];
+  getProviders(): readonly Provider<Api>[];
   /** Get a provider by id */
-  getProvider(id: string): Provider | undefined;
+  getProvider(id: string): Provider<Api> | undefined;
   /** Get all models (optionally filtered by provider) */
   getModels(provider?: string): readonly Model[];
   /** Look up a specific model */
@@ -146,17 +146,17 @@ export function logToolFallback(requestId: string, model: string): void {
 // ─── Models Implementation ───────────────────────────────────────────────────
 
 class ModelsImpl implements Models {
-  private providers = new Map<string, Provider>();
+  private providers = new Map<string, Provider<Api>>();
 
-  register(provider: Provider): void {
+  register(provider: Provider<Api>): void {
     this.providers.set(provider.id, provider);
   }
 
-  getProviders(): readonly Provider[] {
+  getProviders(): readonly Provider<Api>[] {
     return Array.from(this.providers.values());
   }
 
-  getProvider(id: string): Provider | undefined {
+  getProvider(id: string): Provider<Api> | undefined {
     return this.providers.get(id);
   }
 
@@ -274,7 +274,7 @@ export function createProvider<TApi extends Api = Api>(
 
 // ─── Helper: is a provider configured (for env-api-keys discovery) ───────────
 
-export function providerIsConfigured(provider: Provider): boolean {
+export function providerIsConfigured(provider: Provider<Api>): boolean {
   try {
     return provider.auth.isConfigured();
   } catch {
