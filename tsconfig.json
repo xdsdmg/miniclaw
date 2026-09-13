@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
-    "lib": ["ES2020"],
+    "lib": [
+      "ES2020"
+    ],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,
@@ -14,7 +16,15 @@
     "declarationMap": true,
     "sourceMap": true,
     "paths": {
-      "@memory/*": ["./src/memory/*"]
+      "@src/*": [
+        "./src/*"
+      ],
+      "@memory/*": [
+        "./src/memory/*"
+      ],
+      "@llm/*": [
+        "./src/llm/*"
+      ]
     }
   },
   "include": [
@@ -27,6 +37,8 @@
     "**/__tests__/**"
   ],
   "ts-node": {
-    "require": ["tsconfig-paths/register"]
+    "require": [
+      "tsconfig-paths/register"
+    ]
   }
 }
